@@ -227,8 +227,8 @@ audio,video{width:100%;margin-top:8px;border-radius:10px}
 <div class="card">
   <div class="lbl">常用地址（点选即填）</div>
   <div class="row" id="srvRow" style="margin-top:6px">
-    <button class="chip" data-srv="http://s9358050.cc.cd:8188">s9358050.cc.cd</button>
-    <button class="chip" data-srv="http://mrsand.top:8188">mrsand.top</button>
+    <button class="chip" data-srv="https://mrsand.top:8443">mrsand.top</button>
+    <button class="chip" data-srv="http://mrsand.top:8188">mrsand.top:8188</button>
     <button class="chip" data-srv="http://192.168.5.168:8188">192.168.5.168</button>
     <button class="chip" data-srv="http://192.168.50.168:8188">192.168.50.168</button>
   </div>
@@ -986,7 +986,7 @@ function testConn(){
 }
 
 /* ---------- 标题自定义 (logo 图片 + 文字) ---------- */
-var APP_VER = "V12";   // 每次改版自动 +1（由 tools/bump_ver.py 维护，别手改）
+var APP_VER = "V13";   // 每次改版自动 +1（由 tools/bump_ver.py 维护，别手改）
 function applyBranding(){
   var lt = localStorage.getItem("cfg_title");
   $("logoTxt").textContent = lt || "YUNET SAND-AI";
