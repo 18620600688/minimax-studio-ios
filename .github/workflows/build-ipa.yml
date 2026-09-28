@@ -1,0 +1,21 @@
+name: build-ipa
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build unsigned IPA
+        run: bash build_ipa.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiniMaxStudio-ipa
+          path: MiniMaxStudio.ipa
+          if-no-files-found: error

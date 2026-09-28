@@ -1,0 +1,1573 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>MiniMax 生成台</title>
+<style>
+:root{--bg:#121418;--card:#1c1f26;--line:#2a2e38;--txt:#e8eaf0;--dim:#8b90a0;--acc:#ff5c38;--ok:#31c48d;--warn:#f0b429}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--txt);font:15px/1.5 system-ui,sans-serif;padding-bottom:70px}
+h1{font-size:17px;padding:14px 16px 4px;display:flex;align-items:center}
+#verBadge{margin-left:auto;font-size:10px;font-weight:600;color:rgba(255,255,255,.55);background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:1px 7px;letter-spacing:.5px}
+.wrap{padding:10px 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.lbl{font-size:13px;color:var(--dim);margin-bottom:6px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.chip{padding:8px 14px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--txt);font-size:14px}
+.chip.on{border-color:var(--acc);color:var(--acc);font-weight:600}
+input[type=text],textarea,select{width:100%;background:#12141a;border:1px solid var(--line);border-radius:10px;color:var(--txt);padding:10px;font-size:15px}
+textarea{min-height:74px;resize:vertical}
+/* 台词/负面词: 字体缩小, 固定显示5行, 自动换行(超出纵向滚动) */
+#line,#negprompt{height:calc(13px*1.5*5 + 20px);font-size:13px;white-space:pre-wrap;word-break:break-all;overflow-x:hidden;overflow-y:auto;resize:none;line-height:1.5}
+/* 提示词: 字体缩小, 固定显示5行, 自动换行(超出纵向滚动) */
+#prompt{height:calc(13px*1.5*5 + 20px);font-size:13px;white-space:pre-wrap;word-break:break-all;overflow-x:hidden;overflow-y:auto;resize:none;line-height:1.5}
+button{font-family:inherit}
+.btn{width:100%;padding:14px;border:none;border-radius:12px;background:var(--acc);color:#fff;font-size:16px;font-weight:700}
+.btn:disabled{opacity:.4}
+.btn2{padding:8px 14px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--txt)}
+.filebox{border:1.5px dashed var(--line);border-radius:12px;padding:14px;text-align:center;color:var(--dim)}
+#fbImg,#fbAud,#fbVid{font-size:12px;white-space:pre-line;word-break:break-all;line-height:1.5;text-align:left}
+/* 文件框介绍: 缩小字号, 多行换行显示(不滚动) */
+.filebox .fbtxt{font-size:11px;line-height:1.45;white-space:pre-wrap;word-break:break-all}
+/* 工作流/音色库按钮: 正常换行全部显示(不滚动) */
+#wfRow .chip,#voiceRow .chip{flex:1 1 30%;white-space:nowrap;text-align:center;font-size:11px;padding:7px 6px}
+#modelRow .chip{flex:1 1 0;text-align:center;white-space:nowrap;font-size:11px;padding:7px 6px}
+#fitRow{flex-wrap:nowrap}
+#fitRow .chip{flex:1 1 0;text-align:center;white-space:nowrap;font-size:11px;padding:7px 2px}
+/* 自由裁剪框: 16:9 视口, 手指/鼠标拖动, 双指/滚轮缩放 */
+#freeBox{width:100%;aspect-ratio:854/480;background:#000;overflow:hidden;touch-action:none;margin-top:8px;border-radius:10px}
+#freeCv{width:100%;height:100%;display:block;cursor:grab}
+#wfDesc{font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 工作流/音色库介绍: 单行, 超宽自动左右往返滚动显示全部 */
+.dims{overflow:hidden;white-space:nowrap}
+.dims .sdim{display:inline-block;white-space:nowrap}
+.dims .sdim.mvs{animation:sdimv var(--sbd,10s) linear infinite alternate}
+@keyframes sdimv{0%,10%{transform:translateX(0)}90%,100%{transform:translateX(var(--sbsh,0px))}}
+.filebox.has{border-style:solid;border-color:var(--ok);color:var(--txt)}
+.thumb{max-width:100%;max-height:180px;border-radius:10px;display:block;margin:8px auto 0}
+audio,video{width:100%;margin-top:8px;border-radius:10px}
+.dim{color:var(--dim);font-size:13px}
+.ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:#f87171}
+.nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--line)}
+.nav button{flex:1;padding:12px;background:none;border:none;color:var(--dim);font-size:13px}
+.nav button.on{color:var(--acc)}
+.page{display:none} .page.on{display:block}
+.hitem{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:9px 10px;margin-bottom:7px}
+.dateSel{margin-bottom:8px;font-size:14px;padding:8px 10px}
+.dateBtn{width:100%;margin-bottom:8px;font-size:14px;padding:9px 10px;text-align:left}
+.calMask{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99;display:flex;align-items:center;justify-content:center}
+.calBox{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;width:88%;max-width:340px;color:var(--txt)}
+.calHead{display:flex;align-items:center;margin-bottom:8px}
+.calHead b{flex:1;text-align:center;font-size:15px}
+.calHead button{border:none;background:none;color:var(--acc);font-size:18px;padding:4px 12px}
+.calGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
+.calWd{font-size:11px;color:var(--dim);padding:3px 0}
+.calDay{position:relative;padding:7px 0;font-size:13px;border-radius:9px;cursor:pointer}
+.calDay:active{background:var(--line)}
+.calDay.has{background:var(--acc);color:#fff;font-weight:700}
+.calDay.sel{outline:2px solid var(--ok)}
+.calDay.empt{visibility:hidden}
+.calFoot{display:flex;justify-content:space-between;margin-top:10px}
+.calFoot button{border:1px solid var(--line);border-radius:10px;background:none;color:var(--txt);padding:7px 14px;font-size:13px}
+.calCnt{position:absolute;top:0;right:2px;font-size:8px;opacity:.85}
+.hitem .hrow{display:flex;align-items:center;gap:6px}
+.hitem .t{font-weight:600;font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+.hitem .status{font-size:10.5px;margin-top:0;flex:none}
+.hitem .hrow .btn2{padding:3px 8px;font-size:11px;border-radius:8px;flex:none}
+.hitem .status.err{color:#f87171}
+.hitem .status.warn{color:#fbbf24}
+.hitem .btn2{padding:4px 10px;font-size:12px;border-radius:8px}
+.hitem video{max-height:110px !important;width:auto;max-width:100%}
+.hitem img.thumb{max-height:110px !important;max-width:196px !important;border-radius:8px;display:block}
+.bar{height:6px;background:var(--line);border-radius:3px;margin-top:8px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--acc);width:0%;border-radius:3px;transition:width .8s}
+.hidden{display:none}
+.lblrow{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
+.lblrow .lbl{margin-top:0}
+.histBtn{font-size:12px;color:var(--acc);border:1px solid var(--line);border-radius:10px;padding:2px 10px;cursor:pointer;user-select:none}
+.histBox{border:1px solid var(--line);border-radius:8px;margin-top:6px;max-height:200px;overflow:auto;background:var(--card)}
+.histItem{padding:9px 12px;border-bottom:1px solid var(--line);font-size:13px;color:var(--txt);word-break:break-all;display:flex;align-items:center;gap:8px}
+.histItem .histTxt{flex:1;min-width:0}
+.histItem .histDel{flex:none;color:#e5484d;font-size:15px;padding:2px 8px;cursor:pointer;user-select:none}
+.histItem:last-child{border-bottom:none}
+.histItem:active{background:rgba(255,255,255,.06)}
+</style>
+</head>
+<body>
+<h1><img id="logoImg" class="hidden" alt="" style="height:30px;vertical-align:-7px;margin-right:6px;border-radius:6px"><span id="logoTxt">YUNET SAND-AI</span><span id="verBadge"></span></h1>
+
+<!-- 生成页 -->
+<div class="page on" id="pg-gen"><div class="wrap">
+
+<div class="card" id="modelCard">
+  <div class="lbl">模型</div>
+  <div class="row" id="modelRow">
+    <button class="chip on" data-m="h3">Minimax3</button>
+    <button class="chip" data-m="wan5b">Wan5B · 快·无声</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="lbl">工作流</div>
+  <div class="row" id="wfRow">
+    <button class="chip" data-wf="tpl_i2v_voice.json">08 · 语音旁白</button>
+    <button class="chip" data-wf="tpl_ref_voice.json">05 · 口型同步</button>
+    <button class="chip on" data-wf="tpl_i2v_sovits.json">07 · SoVITS配音</button>
+    <button class="chip" data-wf="tpl_t2v.json">01 · 文字生视频</button>
+    <button class="chip" data-wf="tpl_i2v.json">04 · 图生视频</button>
+    <button class="chip" data-wf="tpl_tts.json">09 · 文字转语音</button>
+  </div>
+  <div class="dim" style="margin-top:8px" id="wfDesc">首帧图 + 填台词 = 电脑端 SoVITS 合成配音，画面口型跟随（无需上传语音）</div>
+</div>
+
+<div class="card" id="imgCard">
+  <div class="lbl">参考图（首帧，必选）</div>
+  <div class="row" id="fitRow" style="margin-bottom:8px">
+    <button class="chip" data-fit="face" id="fitFace">🔍 识别裁剪</button>
+    <button class="chip on" data-fit="fit" id="fitFit">⛶ 等比黑底</button>
+    <button class="chip" data-fit="free" id="fitFree">✋ 自由滑动</button>
+  </div>
+  <div class="filebox" id="fbImg" onclick="pick('imgIn')">点按选择图片</div>
+  <input type="file" id="imgIn" accept="image/*" class="hidden">
+  <div id="freeBox" class="hidden"><canvas id="freeCv" width="854" height="480"></canvas></div>
+  <img id="imgPrev" class="thumb hidden">
+</div>
+
+<div class="card" id="audCard">
+  <div class="lbl">语音（必选）</div>
+  <div class="filebox" id="fbAud" onclick="pick('audIn')">点按选择音频（wav / mp3 / m4a）</div>
+  <input type="file" id="audIn" accept="audio/*" class="hidden">
+  <audio id="audPrev" controls class="hidden"></audio>
+  <div class="dim" id="audInfo"></div>
+</div>
+
+<div class="card" id="vidCard">
+  <div class="lbl">参考视频（可选，仅口型同步工作流）</div>
+  <div class="filebox" id="fbVid" onclick="pick('vidIn')">点按选择视频（作动作/构图参考）</div>
+  <input type="file" id="vidIn" accept="video/*" class="hidden">
+  <video id="vidPrev" controls class="hidden"></video>
+</div>
+
+<div class="card" id="voiceCard" style="display:none">
+  <div class="lbl">音色库</div>
+  <div class="row" id="voiceRow">
+    <button class="chip on" data-v="default">默认 · MiniMax自带</button>
+    <button class="chip" data-v="clone">其他 · 克隆音色</button>
+  </div>
+  <div class="dim" style="margin-top:8px" id="voiceHint">默认 = MiniMax 模型自带说话声，电脑不跑克隆，更快；其他 = 现在 GPT-SoVITS 克隆的音色</div>
+</div>
+
+<div class="card">
+  <div class="lblrow"><div class="lbl" id="promptL">提示词（画面动作描述）</div><span class="histBtn" onclick="histToggle('prompt')">▾ 历史</span></div>
+  <textarea id="prompt" placeholder="例：固定机位中景半身，人物正对镜头说话，表情自然，光线柔和"></textarea>
+  <div class="histBox hidden" id="hist_prompt"></div>
+  <div id="lineRow">
+  <div class="lblrow"><div class="lbl" id="lineL">台词（口型同步工作流必填）</div><span class="histBtn" onclick="histToggle('line')">▾ 历史</span></div>
+  <input type="text" id="line" placeholder="例：你好，今天天气真不错。">
+  <div class="histBox hidden" id="hist_line"></div>
+  </div>
+  <div id="negRow">
+  <div class="lblrow"><div class="lbl">负面提示词（不想要的内容，可选）</div><span class="histBtn" onclick="histToggle('negprompt')">▾ 历史</span></div>
+  <textarea id="negprompt" style="min-height:50px" placeholder="例：模糊，面部变形，多余肢体"></textarea>
+  <div class="histBox hidden" id="hist_negprompt"></div>
+  <div class="dim" id="negHint">留空保持原速；填了会启用 CFG 1.5 让负面生效，生成稍慢</div>
+  </div>
+</div>
+
+<div class="card" id="specCard">
+  <div class="lbl" style="margin-top:0">输出时长（24fps，H3 只允许 5+17k 网格）</div>
+  <div class="row" id="durRow">
+    <button class="chip" data-f="73">3 秒</button>
+    <button class="chip on" data-f="124">5 秒</button>
+    <button class="chip" data-f="192">8 秒</button>
+    <button class="chip" data-f="243">10 秒</button>
+  </div>
+  <div class="lbl" style="margin-top:10px">分辨率</div>
+  <div class="row" id="resRow">
+    <button class="chip" data-r="854,480">854×480</button>
+    <button class="chip on" data-r="640,480">640×480</button>
+    <button class="chip" data-r="512,288">512×288 · 最快</button>
+  </div>
+  <div class="lbl" style="margin-top:10px">生成步数（越少越快，画质越降）</div>
+  <div class="row" id="stepsRow">
+    <button class="chip" data-s="2">2 步 · 最快</button>
+    <button class="chip on" data-s="3">3 步 · 均衡</button>
+    <button class="chip" data-s="4">4 步 · 画质稳</button>
+  </div>
+  <div class="dim" style="margin-top:8px" id="stepsHint">3 步 = 默认，速度画质折中；4 步画质最稳约多 1/4 时间；2 步最快但画面可能糊/花</div>
+  <div class="dim" style="margin-top:8px" id="durHint"></div>
+</div>
+
+<div class="card" id="taskCard" style="display:none">
+  <div class="lbl">当前任务</div>
+  <div class="t" id="taskTitle" style="font-weight:600"></div>
+  <div class="status" id="taskStatus"></div>
+  <div class="bar" id="taskBar"><i></i></div>
+  <div class="row" id="taskBtns" style="display:none;margin-top:10px">
+    <button class="btn2" id="pauseBtn" onclick="pauseTask()">暂停</button>
+    <button class="btn2" style="color:#f87171" onclick="stopTask()">停止</button>
+  </div>
+  <div id="taskResult"></div>
+</div>
+
+<button class="btn" id="goBtn" onclick="onGo()">生 成</button>
+<div style="height:10px"></div>
+<div class="card">
+  <div class="lblrow"><div class="lbl">服务器状态</div><span class="dim" id="srvGpuName" style="font-size:10.5px;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span></div>
+  <div id="srvMon"></div>
+</div>
+</div></div>
+
+<!-- 历史页 -->
+<div class="page" id="pg-his"><div class="wrap" id="hisList"></div></div>
+
+<!-- 设置页 -->
+<div class="page" id="pg-set"><div class="wrap">
+<div class="card">
+  <div class="lbl">常用地址（点选即填）</div>
+  <div class="row" id="srvRow" style="margin-top:6px">
+    <button class="chip" data-srv="http://s9358050.cc.cd:8188">s9358050.cc.cd</button>
+    <button class="chip" data-srv="http://mrsand.top:8188">mrsand.top</button>
+    <button class="chip" data-srv="http://192.168.5.168:8188">192.168.5.168</button>
+    <button class="chip" data-srv="http://192.168.50.168:8188">192.168.50.168</button>
+  </div>
+  <div class="lbl" style="margin-top:12px">ComfyUI 服务器地址（电脑的局域网 IP）</div>
+  <input type="text" id="server" placeholder="http://192.168.1.100:8188">
+  <div class="row" style="margin-top:10px">
+    <button class="btn2" onclick="testConn()">测试连接</button>
+    <button class="btn2" onclick="saveServer()">保存</button>
+  </div>
+  <div class="dim" style="margin-top:8px" id="connInfo">电脑需与手机同一 WiFi；ComfyUI 需加 --listen 0.0.0.0 才能被手机访问</div>
+</div>
+<div class="card">
+  <div class="lbl">标题自定义</div>
+  <div class="row" style="margin-top:6px">
+    <button class="btn2" onclick="pick('logoIn')">上传 Logo 图片</button>
+    <button class="btn2" onclick="logoReset()">恢复默认</button>
+  </div>
+  <input type="file" id="logoIn" accept="image/*" class="hidden">
+  <input type="text" id="logoTitle" placeholder="标题文字，默认 YUNET SAND-AI" style="margin-top:8px">
+  <div class="dim" style="margin-top:6px" id="logoInfo">Logo 会自动压到 96px 高以内保存；留空标题文字则用默认</div>
+</div>
+<div class="card">
+  <div class="lbl">说明</div>
+  <div class="dim">
+    · 模板 A「语音旁白」：上传的语音直接作为成片音轨（旁白替换）<br>
+    · 模板 B「口型同步」：语音作为音色参考，模型克隆音色说话、口型跟随，需台词框填文本<br>
+    · 参考视频仅在模板 B 且选择后启用<br>
+    · 生成约 2-6 分钟，可切后台，完成后通知栏提醒
+  </div>
+</div>
+</div></div>
+
+<div class="nav">
+  <button class="on" data-pg="pg-gen" onclick="nav(this)">生成</button>
+  <button data-pg="pg-his" onclick="nav(this)">历史</button>
+  <button data-pg="pg-set" onclick="nav(this)">设置</button>
+</div>
+
+<script src="templates.js"></script>
+<script>
+var $ = function(id){return document.getElementById(id)};
+
+/* ---------- 网页版桥接替身 (App 里有真 AndroidBridge; 浏览器打开时自动补齐, 两端同一份页面) ---------- */
+var IS_WEB = !window.AndroidBridge;
+if(IS_WEB){
+  window.AndroidBridge = {
+    asset: function(name){ return (window.TPL_PACK || {})[name] || ""; },
+    toast: function(msg){
+      var d = document.createElement("div");
+      d.textContent = msg;
+      d.style.cssText = "position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#2a2e38;color:#e8eaf0;padding:10px 18px;border-radius:20px;font-size:14px;z-index:9999;box-shadow:0 2px 10px rgba(0,0,0,.4)";
+      document.body.appendChild(d);
+      setTimeout(function(){ d.remove(); }, 2200);
+    },
+    watch: function(){}, cancelWatch: function(){}, poster: function(){},
+    download: function(url, filename){
+      fetch(url).then(function(r){ return r.blob(); }).then(function(b){
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(b); a.download = filename || "download";
+        document.body.appendChild(a); a.click();
+        setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 3000);
+        AndroidBridge.toast("已开始下载（在浏览器下载目录）");
+      }).catch(function(){ AndroidBridge.toast("下载失败: " + filename); });
+    }
+  };
+}
+
+var WF_NAME = {
+  "tpl_t2v.json": "01·文字生视频",
+  "tpl_i2v_voice.json": "08·语音旁白",
+  "tpl_ref_voice.json": "05·口型同步",
+  "tpl_i2v_sovits.json": "07·SoVITS配音",
+  "tpl_i2v.json": "04·图生视频",
+  "tpl_tts.json": "09·文字转语音",
+  "tpl_wan5b.json": "Wan5B·图生视频"
+};
+var WF_DESC = {
+  "tpl_t2v.json": "纯文字描述直接生成视频，无需上传图片和语音（选好模型就能出片）",
+  "tpl_i2v_voice.json": "首帧图 + 上传语音 = 直接替换音轨，画面由图和提示词驱动",
+  "tpl_ref_voice.json": "参考图 + 语音音色克隆 = 模型让画面人物说出台词，口型跟随语音",
+  "tpl_i2v_sovits.json": "首帧图 + 填台词 = 电脑端 SoVITS 合成配音，画面口型跟随（无需上传语音）"
+};
+var state = {wf:"tpl_i2v_sovits.json", frames:124, res:[640,480], voice:"default", steps:3, model:"h3", imgFit:"fit",
+  img:null, aud:null, vid:null, task:null};
+
+/* ---------- 通用 ---------- */
+function nav(btn){
+  document.querySelectorAll(".nav button").forEach(function(b){b.classList.toggle("on",b===btn)});
+  document.querySelectorAll(".page").forEach(function(p){p.classList.toggle("on",p.id===btn.dataset.pg)});
+  if(btn.dataset.pg==="pg-his") renderHis();
+  if(btn.dataset.pg==="pg-gen") setTimeout(srvTick, 300);   // 切回生成页立即刷一次服务器状态
+}
+function pick(inputId){ $(inputId).click(); }
+function server(){ return ($("server").value||"").trim().replace(/\/+$/,""); }
+
+/* ---------- 服务器状态: CPU/GPU/内存/显存 动态条形图 (设置页, 每3秒刷新) ---------- */
+var SRV_METRICS = [
+  {key:"cpu",  label:"CPU",  color:"#4da3ff"},
+  {key:"gpu",  label:"GPU",  color:"#ff5c38"},
+  {key:"ram",  label:"内存", color:"#31c48d"},
+  {key:"vram", label:"显存", color:"#f0b429"}
+];
+var srvHist = {}, srvRows = {};
+SRV_METRICS.forEach(function(m){ srvHist[m.key] = []; });
+(function buildSrvMon(){
+  var box = $("srvMon");
+  SRV_METRICS.forEach(function(m){
+    var row = document.createElement("div");
+    row.style.cssText = "margin-bottom:8px";
+    row.innerHTML =
+      '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px">' +
+      "<span>" + m.label + '</span><span class="v" style="color:#8b90a0">--</span></div>' +
+      '<div style="display:flex;align-items:center;gap:6px">' +
+      '<div style="flex:1;height:7px;background:#12141a;border:1px solid var(--line);border-radius:4px;overflow:hidden">' +
+      '<div class="fill" style="height:100%;width:0;background:' + m.color + ';border-radius:4px;transition:width .6s ease"></div></div>' +
+      '<canvas class="spark" width="52" height="16" style="flex:none;border-radius:3px"></canvas></div>';
+    box.appendChild(row);
+    srvRows[m.key] = {fill:row.querySelector(".fill"), val:row.querySelector(".v"), spark:row.querySelector(".spark")};
+  });
+})();
+function srvPct(u,t){ return t ? Math.round(u/t*100) : null; }
+function srvSpark(key){
+  var c = srvRows[key].spark, ctx = c.getContext("2d"), w = c.width, h = c.height;
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = "#12141a"; ctx.fillRect(0,0,w,h);
+  var d = srvHist[key].slice(-40);
+  if(d.length < 2) return;
+  var m = SRV_METRICS.find(function(x){return x.key===key});
+  var bw = w/40;
+  ctx.fillStyle = m.color;
+  d.forEach(function(v,i){
+    var bh = Math.max(1, v/100*h);
+    ctx.globalAlpha = 0.35 + 0.65*(i/40);
+    ctx.fillRect(w - (d.length-i)*bw, h-bh, bw-0.5, bh);
+  });
+  ctx.globalAlpha = 1;
+}
+function srvTick(){
+  if(!$("pg-gen").classList.contains("on")) return;      // 只在生成页刷新
+  var s = server();
+  if(!s){ $("srvGpuName").textContent = ""; SRV_METRICS.forEach(function(m){ srvRows[m.key].val.textContent = "未填服务器地址"; }); return; }
+  jfetch(s + "/wbmon/stats")
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      $("srvGpuName").textContent = d.gpu ? d.gpu.name.replace("NVIDIA GeForce ","") : "";
+      var vals = {cpu: d.cpu!=null ? Math.round(d.cpu) : null,
+                  gpu: d.gpu ? d.gpu.util : null,
+                  ram: d.ram ? srvPct(d.ram.used, d.ram.total) : null,
+                  vram: d.gpu ? srvPct(d.gpu.mem_used, d.gpu.mem_total) : null};
+      SRV_METRICS.forEach(function(m){
+        var v = vals[m.key];
+        if(v == null){ srvRows[m.key].val.textContent = "--"; return; }
+        srvHist[m.key].push(v);
+        if(srvHist[m.key].length > 60) srvHist[m.key].shift();
+        srvRows[m.key].fill.style.width = v + "%";
+        srvRows[m.key].val.textContent = v + "%";
+        srvSpark(m.key);
+      });
+    })
+    .catch(function(){
+      $("srvGpuName").textContent = "";
+      SRV_METRICS.forEach(function(m){ srvRows[m.key].val.textContent = "电脑离线"; });
+    });
+}
+setInterval(srvTick, 3000);
+
+/* ---------- HTTP: App 走 Java 桥, 网页版直接 fetch (ComfyUI 已开 CORS) ---------- */
+function b64u8(s){ return btoa(unescape(encodeURIComponent(s))); }
+function jfetch(url, opts){
+  opts = opts || {};
+  if(IS_WEB){
+    var init = {method: opts.method || "GET", headers: opts.headers || {}};
+    if(opts.body){
+      if(opts.body.__b64){
+        var bin = atob(opts.body.__b64), u8 = new Uint8Array(bin.length);
+        for(var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        init.body = u8;
+        init.headers["Content-Type"] = opts.body.ct || init.headers["Content-Type"] || "application/octet-stream";
+      } else { init.body = opts.body; }
+    }
+    return fetch(url, init).then(function(r){
+      return r.text().then(function(tx){
+        return {status: r.status,
+                json: function(){ return Promise.resolve(JSON.parse(tx)); },
+                text: function(){ return Promise.resolve(tx); }};
+      });
+    });
+  }
+  return new Promise(function(res, rej){
+    setTimeout(function(){
+      try{
+        var bodyB64 = "", ct = (opts.headers && opts.headers["Content-Type"]) || "";
+        if(opts.body){
+          if(opts.body.__b64){ bodyB64 = opts.body.__b64; ct = opts.body.ct || ct; }
+          else if(typeof opts.body === "string"){ bodyB64 = b64u8(opts.body); }
+        }
+        /* Android 桥: 同步返回 JSON 字符串; iOS(WKWebView) 桥: 返回 Promise —— 两种都兼容 */
+        var handle = function(s){
+          try{
+            var resp = JSON.parse(s);
+            if(resp.status < 0) return rej(new Error(resp.err || "网络错误"));
+            var text = "";
+            try{ text = decodeURIComponent(escape(atob(resp.body || ""))); }catch(e){}
+            res({status: resp.status,
+                 json: function(){ return Promise.resolve(JSON.parse(text)); },
+                 text: function(){ return Promise.resolve(text); }});
+          }catch(e){ rej(e); }
+        };
+        var r = AndroidBridge.http(url, opts.method || "GET", bodyB64, ct);
+        if(r && typeof r.then === "function"){ r.then(handle, rej); } else { handle(r); }
+      }catch(e){ rej(e); }
+    }, 10);
+  });
+}
+
+/* ---------- 输入历史 (下拉保存/选择) ---------- */
+var HIST_KEYS = {prompt:"hist_prompt", line:"hist_line", negprompt:"hist_negprompt"};
+function histGet(f){
+  try{ return JSON.parse(localStorage.getItem(HIST_KEYS[f]) || "[]"); }catch(e){ return []; }
+}
+function histSave(f, v){
+  v = (v||"").trim(); if(!v) return;
+  var l = histGet(f).filter(function(x){ return x !== v; });
+  l.unshift(v);
+  localStorage.setItem(HIST_KEYS[f], JSON.stringify(l.slice(0, 15)));
+}
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function histToggle(f){
+  var box = $("hist_" + f);
+  if(!box.classList.contains("hidden")){ box.classList.add("hidden"); return; }
+  var l = histGet(f);
+  if(!l.length){
+    box.innerHTML = '<div class="histItem dim">暂无历史 · 点「生成」后自动记录本次输入</div>';
+  } else {
+    var html = l.map(function(x, i){
+      return '<div class="histItem"><span class="histTxt" onclick="histPick(\'' + f + '\',' + i + ')">' + esc(x.slice(0, 120)) + '</span>' +
+             '<span class="histDel" onclick="event.stopPropagation();histDel(\'' + f + '\',' + i + ')">✕</span></div>';
+    }).join("") + '<div class="histItem dim" onclick="histClear(\'' + f + '\')">清空历史</div>';
+    box.innerHTML = html;
+  }
+  box.classList.remove("hidden");
+}
+function histPick(f, i){ $(f).value = histGet(f)[i]; $("hist_" + f).classList.add("hidden"); }
+function histDel(f, i){
+  var l = histGet(f); l.splice(i, 1);
+  localStorage.setItem(HIST_KEYS[f], JSON.stringify(l));
+  $("hist_" + f).classList.add("hidden");
+  histToggle(f);   // 重新展开即重画
+}
+function histClear(f){ localStorage.removeItem(HIST_KEYS[f]); histToggle(f); }
+
+/* ---------- 预计用时 ---------- */
+function isWan(){ return state.model === "wan5b" && state.wf !== "tpl_tts.json"; }
+function effWf(){ // 实际使用的工作流: 选 Wan5B 时走万相链路; 07 选「默认」音色时走 01 的原生语音链路
+  if(isWan()) return "tpl_wan5b.json";
+  return (state.wf === "tpl_i2v_sovits.json" && state.voice === "default") ? "tpl_i2v.json" : state.wf;
+}
+function estSec(){
+  var ew = effWf();
+  if(ew === "tpl_tts.json") return 30;                 // 纯 TTS 半分钟内
+  if(ew === "tpl_wan5b.json"){
+    // 实测(含TeaCache): 512×288 / 73帧 / 4步 80s→35s, 整体约×0.55
+    var rw = Math.round(state.res[0]/32)*32, rh = Math.round(state.res[1]/32)*32;
+    var area = (rw*rh)/(512*288);
+    var w = (state.steps * 11 * Math.pow(area, 0.9) + 12 + state.frames * 0.18) * 0.55;
+    if(($("negprompt").value || "").trim()) w *= 1.15;     // 填负面启用 CFG 1.5, 每步双倍计算
+    return Math.round(w);
+  }
+  // 实测(含H3MiniMaxCache, 2026-09-27): 512x288/73帧/4步 93.5s, 854x480/124帧/4步 232s
+  // V8: 移除 SageAttention(实测+6~40s)与 TurboLoRA(+21s)，仅保留 cache+chunk
+  var rw = Math.round(state.res[0]/32)*32, rh = Math.round(state.res[1]/32)*32;
+  var area = (rw*rh)/(512*288);
+  var base = (70 + state.frames * 1.5) * (state.steps / 3) * 0.45 * Math.pow(area, 0.4);
+  if(ew === "tpl_i2v_sovits.json") base += 25;         // SoVITS 配音时间
+  if(($("negprompt").value || "").trim()) base *= 1.15;      // CFG 1.5 更慢
+  return Math.round(base);
+}
+function fmtDur(sec){
+  if(sec < 60) return sec + "秒";
+  return Math.floor(sec/60) + "分" + (sec%60 >= 10 ? sec%60 : "0"+sec%60) + "秒";
+}
+
+/* ---------- 选择器 ---------- */
+function applyWf(){
+    var isRef = state.wf === "tpl_ref_voice.json";
+    var isSovits = state.wf === "tpl_i2v_sovits.json";
+    var isTts = state.wf === "tpl_tts.json";
+    var isI2v = state.wf === "tpl_i2v.json";
+    var isT2v = state.wf === "tpl_t2v.json";
+    var wan = isWan();   // Wan5B 模式: 只吃 图+提示词, 无声音
+    $("vidCard").style.display = (isRef && !wan) ? "block" : "none";
+    $("voiceCard").style.display = (isSovits && !wan) ? "block" : "none";
+    $("audCard").style.display = (!isSovits && !isTts && !isI2v && !isT2v && !wan) ? "block" : "none";
+    $("imgCard").style.display = (isTts || isT2v) ? "none" : "block";
+    $("lineRow").style.display = (!isTts && !isI2v && !isT2v && !wan) ? "block" : "none";
+    $("negRow").style.display = (!isTts) ? "block" : "none";   // 图/文生视频均已接 CFGGuider, 只在 TTS 隐藏
+    $("specCard").style.display = isTts ? "none" : "block";
+    scrollDim($("voiceHint"));   // 音色库介绍: 显隐/切音色后重新计算滚动
+    scrollDim($("wfDesc"));      // 工作流介绍
+    $("promptL").textContent = isTts ? "台词（要念出来的文字）" : "提示词（画面动作描述）";
+    $("prompt").placeholder = isTts ? "例：你好，今天天气真不错，出来玩吧。"
+                                    : "例：固定机位中景半身，人物正对镜头说话，表情自然，光线柔和";
+    $("lineL").textContent = (isRef || isSovits) ? "台词（此模式必填）" : "台词（旁白模式可留空）";
+}
+/* 介绍文字: 单行, 超宽自动左右往返滚动显示全部 */
+function scrollDim(el){
+  var inner = el.querySelector(".sdim");
+  if(!inner){
+    var t = el.textContent;
+    el.textContent = "";
+    inner = document.createElement("span"); inner.className = "sdim";
+    inner.textContent = t; el.appendChild(inner);
+  }
+  el.classList.add("dims");
+  inner.classList.remove("mvs"); inner.style.removeProperty("--sbsh"); inner.style.removeProperty("--sbd");
+  requestAnimationFrame(function(){
+    var over = inner.scrollWidth - el.clientWidth;
+    if(over > 4){
+      inner.style.setProperty("--sbsh", (-over - 12) + "px");
+      inner.style.setProperty("--sbd", Math.max(6, over/24) + "s");
+      inner.classList.add("mvs");
+    }
+  });
+}
+document.querySelectorAll("#wfRow .chip").forEach(function(b){
+  b.onclick = function(){
+    document.querySelectorAll("#wfRow .chip").forEach(function(x){x.classList.remove("on")});
+    b.classList.add("on"); state.wf = b.dataset.wf;
+    $("wfDesc").textContent = WF_DESC[state.wf];
+    scrollDim($("wfDesc"));
+    applyWf();
+  };
+});
+applyWf();   // 启动时按默认工作流(07)初始化卡片显隐
+document.querySelectorAll("#voiceRow .chip").forEach(function(b){
+  b.onclick = function(){
+    document.querySelectorAll("#voiceRow .chip").forEach(function(x){x.classList.remove("on")});
+    b.classList.add("on"); state.voice = b.dataset.v;
+    $("voiceHint").textContent = state.voice === "default"
+      ? "默认 = MiniMax 模型自带说话声，电脑不跑克隆，更快"
+      : "其他 = 电脑 GPT-SoVITS 用克隆音色配音（与之前一致）";
+    scrollDim($("voiceHint"));
+  };
+});
+document.querySelectorAll("#modelRow .chip").forEach(function(b){
+  b.onclick = function(){
+    document.querySelectorAll("#modelRow .chip").forEach(function(x){x.classList.remove("on")});
+    b.classList.add("on"); state.model = b.dataset.m;
+    applyWf();
+  };
+});
+document.querySelectorAll("#durRow .chip").forEach(function(b){
+  b.onclick = function(){
+    document.querySelectorAll("#durRow .chip").forEach(function(x){x.classList.remove("on")});
+    b.classList.add("on"); state.frames = parseInt(b.dataset.f); durHint();
+  };
+});
+document.querySelectorAll("#resRow .chip").forEach(function(b){
+  b.onclick = function(){
+    document.querySelectorAll("#resRow .chip").forEach(function(x){x.classList.remove("on")});
+    b.classList.add("on"); state.res = b.dataset.r.split(",").map(Number);
+  };
+});
+document.querySelectorAll("#stepsRow .chip").forEach(function(b){
+  b.onclick = function(){
+    document.querySelectorAll("#stepsRow .chip").forEach(function(x){x.classList.remove("on")});
+    b.classList.add("on"); state.steps = parseInt(b.dataset.s);
+  };
+});
+
+function bestFrames(sec){ // >= sec*24 的最小 5+17k 帧数
+  var need = Math.max(5, sec*24);
+  var k = Math.max(0, Math.ceil((need-5)/17));
+  return 5 + 17*k;
+}
+function durHint(){
+  var el = $("audInfo");
+  if(state.audDur){
+    var rec = bestFrames(state.audDur);
+    el.textContent = "语音时长 " + state.audDur.toFixed(1) + "s · 建议帧数 " + rec +
+      (rec !== state.frames ? "（当前选的 " + state.frames + " 帧会" + (state.frames*24 < state.audDur*24 ? "截断语音" : "多出无声尾段" ) + "）" : " ✓");
+  }
+}
+
+/* ---------- 文件选择与预览 ---------- */
+/* 参考图: 自动调正(人脸检测, 翻转/横竖90°自动转正) → 等比缩进 854x480 框内 → JPEG 上传 */
+function normImg(f, cb){
+  var fb = function(){ cb(f); };
+  try{
+    /* HEIC/HEIF: WebView 的 <img> 解不了, App 端先走 Java 桥转 JPEG 再进正常流程 */
+    var isHeic = /\.(hei[cf]|hif)$/i.test(f.name || "") || /hei[cf]|heif/i.test(f.type || "");
+    if(isHeic){
+      if(window.AndroidBridge && AndroidBridge.decodeImg){
+        var fr = new FileReader();
+        fr.onload = function(){
+          try{
+            var r = JSON.parse(AndroidBridge.decodeImg(String(fr.result).split(",")[1] || ""));
+            if(!r.b64){ AndroidBridge.toast("HEIC 转换失败，请改用 JPG"); fb(); return; }
+            var bin = atob(r.b64), arr = new Uint8Array(bin.length);
+            for(var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+            var nb = new Blob([arr], {type: "image/jpeg"});
+            nb.name = (f.name || "photo").replace(/\.[^.]+$/i, "") + ".jpg";
+            AndroidBridge.toast("HEIC 已自动转 JPG (" + r.w + "×" + r.h + ")");
+            normImg(nb, cb);   // 转出的 JPEG 重新走调正/裁剪
+          }catch(e){ fb(); }
+        };
+        fr.onerror = function(){ fb(); };
+        fr.readAsDataURL(f);
+      } else {
+        toast("网页版不支持 HEIC，请先在手机相册转成 JPG 再上传");
+        fb();
+      }
+      return;
+    }
+    if(!f.type || f.type.indexOf("image") !== 0){ fb(); return; }
+    var url = URL.createObjectURL(f), im = new Image();
+    im.onload = function(){
+      URL.revokeObjectURL(url);
+      var w = im.naturalWidth, h = im.naturalHeight;
+      if(!w || !h){ fb(); return; }
+      var finish = function(rot, fx, fy){
+        rot = rot || 0;
+        fx = (typeof fx !== "number" || isNaN(fx)) ? 0.5 : fx;   // 无人脸/桥失败时居中兜底
+        fy = (typeof fy !== "number" || isNaN(fy)) ? 0.5 : fy;
+        if(state.imgFit === "free"){ setFreeImg(im, w, h); return; }   // 自由模式: 交给拖拽裁剪框
+        try{
+          var swapped = (rot === 90 || rot === 270);
+          var rw = swapped ? h : w, rh = swapped ? w : h;
+          /* ① 先把原图(按需旋转)转到中间画布 t, 长边≤1280 */
+          var s1 = Math.min(1, 1280/Math.max(rw, rh));
+          var t = document.createElement("canvas");
+          t.width = Math.max(2, Math.round(rw*s1)); t.height = Math.max(2, Math.round(rh*s1));
+          var tc = t.getContext("2d");
+          tc.translate(t.width/2, t.height/2);   // 必须先居中, 否则 rot=0 时图片画到画布外
+          if(rot) tc.rotate(rot * Math.PI/180);
+          tc.drawImage(im, -w*s1/2, -h*s1/2, w*s1, h*s1);
+          /* ② 输出 854×480: 按 识别/等比 两种模式 */
+          var cv = document.createElement("canvas");
+          cv.width = 854; cv.height = 480;
+          var cc = cv.getContext("2d");
+          var note2;
+          if(state.imgFit === "face"){
+            /* 识别: 等比缩放铺满, 裁剪窗口以人脸为中心(fx/fy), 无人脸则居中 */
+            var bsc = Math.max(854/t.width, 480/t.height);
+            var bw = Math.round(t.width*bsc), bh = Math.round(t.height*bsc);
+            var bg = document.createElement("canvas");
+            bg.width = Math.max(854, bw); bg.height = Math.max(480, bh);
+            var bc = bg.getContext("2d");
+            bc.drawImage(t, (bg.width-bw)/2, (bg.height-bh)/2, bw, bh);
+            var cx = (isNaN(fx) ? 0.5 : fx) * bg.width, cy = (isNaN(fy) ? 0.5 : fy) * bg.height;
+            var x0 = Math.round(Math.min(Math.max(cx - 427, 0), Math.max(0, bg.width - 854)));
+            var y0 = Math.round(Math.min(Math.max(cy - 216, 0), Math.max(0, bg.height - 480)));
+            cc.drawImage(bg, x0, y0, 854, 480, 0, 0, 854, 480);
+            note2 = "854×480 识别裁剪(头像为中心)";
+          } else if(Math.abs(t.width/t.height - 854/480) < 0.02){
+            cc.drawImage(t, 0, 0, 854, 480);     // 比例正好, 直接等比缩放
+            note2 = "854×480 等比缩放";
+          } else {
+            cc.fillStyle = "#000";                                   // 背景涂黑
+            cc.fillRect(0, 0, 854, 480);
+            var sc2 = Math.min(854/t.width, 480/t.height);          // 前景: 完整等比居中
+            var dw = t.width*sc2, dh = t.height*sc2;
+            cc.drawImage(t, (854-dw)/2, (480-dh)/2, dw, dh);
+            note2 = "854×480 等比完整+黑底";
+          }
+          cv.toBlob(function(b){
+            if(!b){ fb(); return; }
+            b.name = (f.name || "ref").replace(/\.[^.]+$/, "") + "_854x480.jpg";
+            var rotTxt = rot === 90 ? "已自动调正(左/右90°)" : rot === 180 ? "已自动调正(上下颠倒)" : rot === 270 ? "已自动调正(左/右90°)" : "";
+            b.__note = "原图 " + w + "×" + h + " (" + (f.size/1024).toFixed(0) + "KB) → " +
+              note2 + " (" + (b.size/1024).toFixed(0) + "KB)" +
+              (rotTxt ? " · " + rotTxt : "");
+            cb(b);
+          }, "image/jpeg", 0.85);
+        }catch(e){ fb(); }
+      };
+      /* 人脸转正: App 走 Java 桥(90°粗定位+±35°细搜索, 直接返回转正图); 网页版用原生 FaceDetector(可用时) */
+      if(window.AndroidBridge && AndroidBridge.straightenImg && !f.__straight){
+        try{
+          var ds = Math.min(1, 1280/Math.max(w,h));
+          var dc = document.createElement("canvas");
+          dc.width = Math.max(2, Math.round(w*ds)); dc.height = Math.max(2, Math.round(h*ds));
+          dc.getContext("2d").drawImage(im, 0, 0, dc.width, dc.height);
+          var r = JSON.parse(AndroidBridge.straightenImg(dc.toDataURL("image/jpeg", 0.9).split(",")[1]));
+          if(r.b64){
+            var bin = atob(r.b64), arr = new Uint8Array(bin.length);
+            for(var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+            var nb = new Blob([arr], {type: "image/jpeg"});
+            nb.name = f.name || "ref.jpg";
+            nb.__straight = true; nb.__fx = r.fx; nb.__fy = r.fy;
+            if(r.rot) AndroidBridge.toast("已按人脸转正 " + Math.round(r.rot) + "°");
+            else if(r.face === 0) AndroidBridge.toast("未识别到人脸，按原图处理");
+            normImg(nb, cb);          // 转正后的图重走模式处理(裁剪/等比), 不再二次转正
+            return;
+          }
+          finish(0);
+        }catch(e){ finish(0); }
+      } else if(f.__straight){
+        finish(0, f.__fx, f.__fy);    // 已转正, 直接进模式处理, 用桥返回的人脸位置
+      } else if(IS_WEB && window.FaceDetector){
+        (function(){
+          var ds = Math.min(1, 320/Math.max(w,h));
+          var dc = document.createElement("canvas");
+          dc.width = Math.max(2, Math.round(w*ds)); dc.height = Math.max(2, Math.round(h*ds));
+          dc.getContext("2d").drawImage(im, 0, 0, dc.width, dc.height);
+          var fd = new window.FaceDetector({fastMode:true, maxDetectedFaces:1});
+          var rots = [0, 90, 180, 270], i = 0;
+          var next = function(){
+            if(i >= rots.length){ finish(0); return; }
+            var rot = rots[i++];
+            var c2 = document.createElement("canvas");
+            var sw = rot % 180 ? dc.height : dc.width, sh = rot % 180 ? dc.width : dc.height;
+            c2.width = sw; c2.height = sh;
+            var cx = c2.getContext("2d");
+            cx.translate(sw/2, sh/2); cx.rotate(rot*Math.PI/180);
+            cx.drawImage(dc, -dc.width/2, -dc.height/2);
+            fd.detect(c2).then(function(fs){
+              if(fs && fs.length){
+                var bb = fs[0].boundingBox;
+                finish(rot, (bb.x + bb.width/2)/sw, (bb.y + bb.height/2)/sh);
+              } else next();
+            }).catch(function(){ finish(0); });
+          };
+          next();
+        })();
+      } else finish(0);
+    };
+    im.onerror = function(){ URL.revokeObjectURL(url); fb(); };
+    im.src = url;
+  }catch(e){ fb(); }
+}
+
+/* 参考视频: 超过 854x480 就交给 Java 转码 (MediaCodec 等比缩小 + 重编码),
+   完成后 state.vid 变成 {__path,...} 标记, 提交时走 uploadFile 直传, 不重复上传 */
+var vidReadyCb = null;
+function setVidInfo(t){ var el = $("vidInfo"); if(el) el.textContent = t || ""; }
+window.onVidProgress = function(m){ setVidInfo(m || ""); };
+window.onVidReady = function(res){
+  if(vidReadyCb){ var c = vidReadyCb; vidReadyCb = null; c(res); }
+};
+function normVid(f){
+  setVidInfo("");
+  var plain = function(note){
+    state.vid = f;
+    if(note) setVidInfo(note);
+  };
+  try{
+    if(IS_WEB || !window.AndroidBridge || !AndroidBridge.compressLastVideo ||
+       !f.type || f.type.indexOf("video") !== 0 || f.size > 100*1048576){
+      plain(f.size > 100*1048576 ? "视频过大(>100MB)，跳过压缩，将上传原文件" : "");
+      return;
+    }
+    var url = URL.createObjectURL(f), v = document.createElement("video");
+    v.preload = "metadata";
+    v.onloadedmetadata = function(){
+      var w = v.videoWidth, h = v.videoHeight;
+      URL.revokeObjectURL(url);
+      if(!w || !h){ plain(""); return; }
+      if(w <= 854 && h <= 480){ plain(w + "×" + h + " 未超 854×480，无需压缩"); return; }
+      setVidInfo("压缩中 " + w + "×" + h + " → 等比装进 854×480（视频越长越久，请勿退出页面）…");
+      vidReadyCb = function(resJson){
+        try{
+          var r = JSON.parse(resJson);
+          if(r && r.__path){
+            state.vid = r;
+            setVidInfo("已压缩 " + w + "×" + h + " → " + ((r.__size||0)/1048576).toFixed(1) + " MB（等比 ≤854×480）");
+            setFb($("fbVid"), (f.name||"ref") + " · 已压缩至 854×480 内（" +
+              ((r.__size||0)/1048576).toFixed(1) + " MB）");
+          } else {
+            plain("压缩失败(" + (r && r.err || "?") + ")，将上传原文件");
+          }
+        }catch(e){ plain("压缩结果解析失败，将上传原文件"); }
+      };
+      AndroidBridge.compressLastVideo(f.name || "ref.mp4");
+    };
+    v.onerror = function(){ URL.revokeObjectURL(url); plain(""); };
+    v.src = url;
+  }catch(e){ plain(""); }
+}
+
+/* 文件框介绍文字: 缩小字号, 多行换行显示 */
+function setFb(box, txt){
+  var el = box.querySelector(".fbtxt");
+  if(!el){
+    box.textContent = "";
+    el = document.createElement("div"); el.className = "fbtxt";
+    box.appendChild(el);
+  }
+  el.textContent = txt;
+}
+
+function applyFile(key, boxId, prevId, f){
+  state[key] = f;
+  var box = $(boxId);
+  box.classList.add("has");
+  setFb(box, f.name + (f.__note ? "\n" + f.__note : "（" + (f.size/1048576).toFixed(2) + " MB）"));
+  if(key === "img" && state.imgFit === "free") return;   // 自由模式: 裁剪框即实时预览, 不重复显示缩略图
+  var prev = $(prevId);
+  if(prev.tagName === "IMG"){ prev.src = URL.createObjectURL(f); prev.classList.remove("hidden"); }
+  else if(prev.tagName === "VIDEO"){ prev.src = URL.createObjectURL(f); prev.classList.remove("hidden"); }
+  else if(prev.tagName === "AUDIO"){
+    prev.src = URL.createObjectURL(f); prev.classList.remove("hidden");
+    prev.onloadedmetadata = function(){ state.audDur = prev.duration; durHint(); };
+  }
+}
+function bindFile(inputId, boxId, prevId, key){
+  $(inputId).onchange = function(){
+    var f = this.files[0];
+    if(!f) return;
+    if(key === "img"){ state.imgRaw = f; reprocessImg(); }
+    else applyFile(key, boxId, prevId, f);
+  };
+}
+/* 参考图处理入口: 保留原图, 切换 识别/等比 时重新处理 */
+function reprocessImg(){
+  if(!state.imgRaw) return;
+  normImg(state.imgRaw, function(f2){ applyFile("img", "fbImg", "imgPrev", f2); });
+}
+/* 识别/等比/自由 模式切换 */
+document.querySelectorAll("#fitRow .chip").forEach(function(b){
+  b.onclick = function(){
+    document.querySelectorAll("#fitRow .chip").forEach(function(x){x.classList.remove("on")});
+    b.classList.add("on");
+    state.imgFit = b.dataset.fit;
+    $("freeBox").classList.toggle("hidden", state.imgFit !== "free");
+    reprocessImg();   // 已选图立即按新模式重新处理
+  };
+});
+
+/* ---------- 自由裁剪: 拖动摆位 + 双指/滚轮缩放, 松手后自动生成 854×480 ---------- */
+var FREE = {img:null, iw:0, ih:0, s:1, ox:0, oy:0};
+var freeTid = null, freePts = {};
+function freeCover(){ return Math.max(854/FREE.iw, 480/FREE.ih); }
+function setFreeImg(im, w, h){
+  FREE.img = im; FREE.iw = w; FREE.ih = h;
+  FREE.s = freeCover();
+  FREE.ox = (854 - w*FREE.s)/2; FREE.oy = (480 - h*FREE.s)/2;
+  $("freeBox").classList.remove("hidden");
+  freeDraw(); freeSchedule();
+}
+function freeClamp(){
+  var w = FREE.iw*FREE.s, h = FREE.ih*FREE.s;
+  FREE.ox = Math.min(0, Math.max(854 - w, FREE.ox));
+  FREE.oy = Math.min(0, Math.max(480 - h, FREE.oy));
+}
+function freeDraw(){
+  var cc = $("freeCv").getContext("2d");
+  cc.fillStyle = "#000"; cc.fillRect(0, 0, 854, 480);
+  cc.drawImage(FREE.img, FREE.ox, FREE.oy, FREE.iw*FREE.s, FREE.ih*FREE.s);
+}
+function freeSchedule(){   // 手势停止 450ms 后物化为 jpg → applyFile
+  if(freeTid) clearTimeout(freeTid);
+  freeTid = setTimeout(function(){
+    $("freeCv").toBlob(function(b){
+      if(!b) return;
+      b.name = ((state.imgRaw && state.imgRaw.name) || "ref").replace(/\.[^.]+$/i, "") + "_free_854x480.jpg";
+      b.__note = "854×480 自由裁剪";
+      applyFile("img", "fbImg", "imgPrev", b);
+    }, "image/jpeg", 0.9);
+  }, 450);
+}
+function freeZoom(factor, px, py){   // 围绕画布坐标(px,py)缩放
+  var F = FREE, lo = freeCover(), hi = lo*8;
+  var ns = Math.min(Math.max(F.s*factor, lo), hi);
+  factor = ns/F.s; if(factor === 1) return;
+  F.ox = px - (px - F.ox)*factor;
+  F.oy = py - (py - F.oy)*factor;
+  F.s = ns; freeClamp(); freeDraw(); freeSchedule();
+}
+function freeMid(){    // 画布坐标下的双指中点
+  var ids = Object.keys(freePts), a = freePts[ids[0]], b = freePts[ids[1]];
+  return {x:(a.x+b.x)/2, y:(a.y+b.y)/2};
+}
+(function(){
+  var box = $("freeBox");
+  var pdist = function(){
+    var ids = Object.keys(freePts), a = freePts[ids[0]], b = freePts[ids[1]];
+    return Math.hypot(a.x-b.x, a.y-b.y);
+  };
+  box.addEventListener("pointerdown", function(e){
+    freePts[e.pointerId] = {x:e.clientX, y:e.clientY};
+    try{ box.setPointerCapture(e.pointerId); }catch(err){}
+    e.preventDefault();
+  });
+  box.addEventListener("pointermove", function(e){
+    if(!freePts[e.pointerId]) return;
+    var r = box.getBoundingClientRect(), k = 854/r.width;
+    if(Object.keys(freePts).length >= 2){
+      var d0 = pdist(), m = freeMid();
+      freePts[e.pointerId] = {x:e.clientX, y:e.clientY};
+      var d1 = pdist();
+      if(d0 > 0 && d1 > 0) freeZoom(d1/d0, (m.x - r.left)*k, (m.y - r.top)*k);
+    } else {
+      var p = freePts[e.pointerId];
+      FREE.ox += (e.clientX - p.x)*k;
+      FREE.oy += (e.clientY - p.y)*k;
+      p.x = e.clientX; p.y = e.clientY;
+      freeClamp(); freeDraw(); freeSchedule();
+    }
+  });
+  var up = function(e){ delete freePts[e.pointerId]; };
+  box.addEventListener("pointerup", up);
+  box.addEventListener("pointercancel", up);
+  box.addEventListener("wheel", function(e){
+    e.preventDefault();
+    var r = box.getBoundingClientRect(), k = 854/r.width;
+    freeZoom(e.deltaY < 0 ? 1.1 : 0.9, (e.clientX - r.left)*k, (e.clientY - r.top)*k);
+  }, {passive:false});
+})();
+bindFile("imgIn","fbImg","imgPrev","img");
+bindFile("audIn","fbAud","audPrev","aud");
+/* 参考视频单独绑定: 先本地预览原文件, 压缩在后台跑 */
+$("vidIn").onchange = function(){
+  var f = this.files[0];
+  if(!f) return;
+  $("fbVid").classList.add("has");
+  setFb($("fbVid"), f.name + "（" + (f.size/1048576).toFixed(2) + " MB）");
+  $("vidPrev").src = URL.createObjectURL(f); $("vidPrev").classList.remove("hidden");
+  state.vid = f;
+  normVid(f);
+};
+
+/* ---------- 设置 ---------- */
+$("server").value = localStorage.getItem("server") || "http://mrsand.top:8188";   // 首次运行默认地址
+
+/* 常用地址快捷选择: 点选即填+保存+测连接 */
+document.querySelectorAll("#srvRow .chip").forEach(function(b){
+  b.onclick = function(){
+    $("server").value = b.dataset.srv;
+    saveServer(); testConn(); srvChips();
+  };
+});
+function srvChips(){
+  var cur = server();
+  document.querySelectorAll("#srvRow .chip").forEach(function(b){
+    if(b.dataset.srv === cur) b.classList.add("on"); else b.classList.remove("on");
+  });
+}
+srvChips();
+function saveServer(){
+  localStorage.setItem("server", server());
+  AndroidBridge.toast("已保存");
+}
+function testConn(){
+  var s = server();
+  if(!s){ $("connInfo").innerHTML = '<span class="err">请先填地址</span>'; return; }
+  localStorage.setItem("server", s);
+  $("connInfo").textContent = "连接中…";
+  jfetch(s + "/system_stats").then(function(r){return r.json()}).then(function(j){
+    var gpu = (j.devices && j.devices[0]) ? j.devices[0].name : "?";
+    $("connInfo").innerHTML = '<span class="ok">✓ 连接成功</span> · ' + gpu;
+  }).catch(function(e){
+    $("connInfo").innerHTML = '<span class="err">✗ 连不上：' + e + '</span>（检查同一 WiFi / --listen / 防火墙）';
+  });
+}
+
+/* ---------- 标题自定义 (logo 图片 + 文字) ---------- */
+var APP_VER = "V12";   // 每次改版自动 +1（由 tools/bump_ver.py 维护，别手改）
+function applyBranding(){
+  var lt = localStorage.getItem("cfg_title");
+  $("logoTxt").textContent = lt || "YUNET SAND-AI";
+  $("verBadge").textContent = APP_VER;
+  var lg = localStorage.getItem("cfg_logo");
+  if(lg){ $("logoImg").src = lg; $("logoImg").classList.remove("hidden"); }
+  else $("logoImg").classList.add("hidden");
+  var el = $("logoTitle"); if(el && document.activeElement !== el) el.value = lt || "";
+}
+$("logoTitle").onchange = $("logoTitle").onblur = function(){
+  localStorage.setItem("cfg_title", this.value.trim());
+  applyBranding(); AndroidBridge.toast("标题已更新");
+};
+$("logoIn").onchange = function(){
+  var f = this.files && this.files[0]; this.value = "";
+  if(!f) return;
+  var url = URL.createObjectURL(f), im = new Image();
+  im.onload = function(){
+    URL.revokeObjectURL(url);
+    var w = im.naturalWidth, h = im.naturalHeight;
+    if(!w || !h){ AndroidBridge.toast("图片读取失败"); return; }
+    var sc = Math.min(1, 96/h);
+    var cv = document.createElement("canvas");
+    cv.width = Math.max(2, Math.round(w*sc)); cv.height = Math.max(2, Math.round(h*sc));
+    cv.getContext("2d").drawImage(im, 0, 0, cv.width, cv.height);
+    try{
+      localStorage.setItem("cfg_logo", cv.toDataURL("image/png"));
+      applyBranding(); AndroidBridge.toast("Logo 已更新");
+    }catch(e){ AndroidBridge.toast("保存失败(图片过大): " + e); }
+  };
+  im.onerror = function(){ URL.revokeObjectURL(url); AndroidBridge.toast("图片读取失败"); };
+  im.src = url;
+};
+function logoReset(){
+  localStorage.removeItem("cfg_logo"); localStorage.removeItem("cfg_title");
+  applyBranding(); AndroidBridge.toast("已恢复默认标题");
+}
+applyBranding();
+
+/* ---------- 上传 (multipart 手工拼装, 走 Java 桥) ---------- */
+function upload(file, cb){
+  try{
+    if(file && file.__path){
+      /* Java 压缩产物: 缓存文件直传, 免二次搬运 */
+      var r = AndroidBridge.uploadFile(file.__path, server(), file.name || "ref_854.mp4");
+      try{
+        var j = JSON.parse(r);
+        if(j.err || j.status >= 400) cb(new Error(j.err || ("HTTP " + j.status)));
+        else cb(null, j.subfolder ? j.subfolder + "/" + j.name : j.name, j);
+      }catch(pe){ cb(pe); }
+      return;
+    }
+    var fr = new FileReader();
+    fr.onload = function(){
+      var fileB64 = fr.result.split(",")[1];
+      var b = "wxapp" + Date.now();
+      var pre = "--" + b + "\r\nContent-Disposition: form-data; name=\"image\"; filename=\"" +
+                file.name + "\"\r\nContent-Type: application/octet-stream\r\n\r\n";
+      var post = "\r\n--" + b + "\r\nContent-Disposition: form-data; name=\"type\"\r\n\r\ninput\r\n--" + b +
+                 "\r\nContent-Disposition: form-data; name=\"overwrite\"\r\n\r\ntrue\r\n--" + b + "--\r\n";
+      var bodyB64 = btoa(atob(b64u8(pre)) + atob(fileB64) + atob(b64u8(post)));
+      jfetch(server() + "/upload/image", {method:"POST", body:{__b64: bodyB64, ct: "multipart/form-data; boundary=" + b}})
+        .then(function(r){ return r.json(); })
+        .then(function(j){ cb(null, j.subfolder ? j.subfolder + "/" + j.name : j.name, j); })
+        .catch(function(e){ cb(e); });
+    };
+    fr.onerror = function(){ cb(new Error("读取文件失败")); };
+    fr.readAsDataURL(file);
+  }catch(e){ cb(e); }
+}
+
+/* ---------- 提交 ---------- */
+function submit(){
+  var s = server();
+  if(!s){ nav(document.querySelector('[data-pg="pg-set"]')); $("connInfo").innerHTML='<span class="err">先填服务器地址</span>'; return; }
+  localStorage.setItem("server", s);
+  // 先查服务器队列: 正在生成/有排队就不堆积新任务
+  jfetch(s + "/queue")
+    .then(function(r){ return r.json(); })
+    .then(function(q){
+      var n = ((q.queue_running||[]).length + (q.queue_pending||[]).length);
+      if(n > 0){ AndroidBridge.toast("电脑正在生成，前面还有 " + n + " 个等待中，请稍后再试"); return; }
+      doSubmit();
+    })
+    .catch(function(){ doSubmit(); });   // 队列查不到就照常提交
+}
+function doSubmit(){
+  var s = server();   // submit() 里的 s 是局部变量, 这里必须自己取
+  var isT2v = state.wf === "tpl_t2v.json";
+  if(!state.img && state.wf !== "tpl_tts.json" && !isT2v){ AndroidBridge.toast("先选参考图"); return; }
+  var p = $("prompt").value.trim();
+  var line = $("line").value.trim();
+  var isRef = state.wf === "tpl_ref_voice.json";
+  var isSovits = state.wf === "tpl_i2v_sovits.json";
+  var isTts = state.wf === "tpl_tts.json";
+  var isI2v = state.wf === "tpl_i2v.json";
+  var isT2v = state.wf === "tpl_t2v.json";
+  var wan = isWan();
+  var needAud = !isSovits && !isTts && !isI2v && !isT2v && !wan;
+  if(needAud && !state.aud){ AndroidBridge.toast("先选语音"); return; }
+  if(isTts && !p){ AndroidBridge.toast("先输入台词"); return; }
+  if((isRef || isSovits) && !wan && !line){ AndroidBridge.toast("此模式需要填台词"); return; }
+  if(!p){ AndroidBridge.toast("提示词不能为空"); return; }
+  var fullPrompt = p;
+  if(line && !isTts) fullPrompt += "\n<d>[Chinese]" + line + "</d>";
+
+  var proceed = function(imgName, audName){
+    var vidName = null;
+    var after = function(){
+        var tpl;
+        try{ tpl = JSON.parse((window.TPL_PACK || {})[effWf()] || AndroidBridge.asset(effWf())); }catch(e){ tpl = null; }
+        if(!tpl){ fail("模板加载失败：" + effWf() + " 不存在"); return; }
+        var payload = fill(tpl, fullPrompt, imgName, audName, vidName);
+        jfetch(s + "/prompt", {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({prompt: payload, client_id: "minimaxapp"})})
+          .then(function(r){return r.json()})
+          .then(function(resp){
+            if(!resp.prompt_id || (resp.node_errors && Object.keys(resp.node_errors).length)){
+              fail("提交被拒绝: " + JSON.stringify(resp.node_errors || resp)); return;
+            }
+            onSubmitted(resp.prompt_id);
+          })
+          .catch(function(e){ fail("提交失败：" + e); });
+      };
+      if(isRef && state.vid){
+        upload(state.vid, function(ev, vn){ vidName = vn; after(); });
+      } else after();
+  };
+  if(isTts || isT2v){
+    $("goBtn").disabled = true;
+    $("goBtn").textContent = "提交中…";
+    proceed(null, null);
+  } else if(isSovits || isI2v || wan){
+    $("goBtn").disabled = true;
+    $("goBtn").textContent = "上传图片中…";
+    upload(state.img, function(ei, imgName){
+      if(ei){ fail("图片上传失败：" + ei); return; }
+      proceed(imgName, null);
+    });
+  } else {
+    $("goBtn").disabled = true;
+    $("goBtn").textContent = "上传素材中…";
+    upload(state.aud, function(ea, audName){
+      if(ea){ fail("语音上传失败：" + ea); return; }
+      upload(state.img, function(ei, imgName){
+        if(ei){ fail("图片上传失败：" + ei); return; }
+        proceed(imgName, audName);
+      });
+    });
+  }
+}
+function fail(msg){
+  $("goBtn").disabled = false; $("goBtn").textContent = "生 成";
+  AndroidBridge.toast(msg);
+  console.warn(msg);
+}
+function fill(tpl, prompt, img, aud, vid){
+  var neg = ($("negprompt").value || "").trim();
+  var line = ($("line").value || "").trim();
+  var wan = isWan();
+  var ww = wan ? Math.max(32, Math.round(state.res[0]/32)*32) : state.res[0];   // Wan latent 要求 32 倍数(854→864)
+  var wh = wan ? Math.max(32, Math.round(state.res[1]/32)*32) : state.res[1];
+  var vals = {"{{PROMPT}}": prompt, "{{IMAGE}}": img, "{{AUDIO}}": aud,
+              "{{LENGTH}}": state.frames, "{{WIDTH}}": ww,
+              "{{HEIGHT}}": wh,
+              "{{STEPS}}": state.steps,
+              "{{SEED}}": Math.floor(Math.random() * 2147483647),
+              "{{TEXT}}": state.wf === "tpl_tts.json" ? prompt : line, "{{NEG}}": neg, "{{CFG}}": neg ? 1.5 : 1.0};
+  var out = JSON.parse(JSON.stringify(tpl));
+  if(!vid){ delete out["video1"]; if(out["131"]) delete out["131"]["inputs"]["ref_videos.ref_video_0"]; }
+  else vals["{{VIDEO}}"] = vid;
+  Object.keys(out).forEach(function(nid){
+    var ins = out[nid].inputs || {};
+    Object.keys(ins).forEach(function(k){
+      if(typeof ins[k] === "string" && vals[ins[k]] !== undefined) ins[k] = vals[ins[k]];
+      else if(typeof ins[k] === "string" && ins[k].indexOf("{{") === 0 && ins[k].indexOf("VIDEO") > 0) delete ins[k];
+    });
+  });
+  return out;
+}
+
+/* ---------- 任务状态 ---------- */
+/* 主按钮: 空闲=生成, 任务运行中=停止 */
+function onGo(){
+  var t = state.task;
+  if(t && t.status === "running"){ stopTask(); return; }
+  submit();
+}
+function onSubmitted(pid){
+  $("goBtn").disabled = false; $("goBtn").textContent = "停 止";
+  if(!IS_WEB) AndroidBridge.keepScreen(true);   // 生成中保持屏幕常亮
+  histSave("prompt", $("prompt").value);
+  histSave("line", $("line").value);
+  histSave("negprompt", $("negprompt").value);
+  var est = estSec();
+  $("taskCard").style.display = "block";
+  $("taskTitle").textContent = new Date().toLocaleTimeString() + " · " +
+    (WF_NAME[effWf()] || state.wf) +
+    (state.wf === "tpl_i2v_sovits.json" && !isWan() ? (state.voice === "default" ? " · 自带声" : " · 克隆声") : "") +
+    (state.wf === "tpl_tts.json" ? "" : " · " + state.frames + "帧 " + (isWan() ? Math.round(state.res[0]/32)*32 + "×" + Math.round(state.res[1]/32)*32 : state.res.join("×")) + " " + state.steps + "步");
+  $("taskResult").innerHTML = "";
+  setTask("排队/执行中… 预计约 " + fmtDur(est), true);
+  state.task = {id: pid, wf: effWf(), frames: state.frames, res: (isWan() ? Math.round(state.res[0]/32)*32 + "×" + Math.round(state.res[1]/32)*32 : state.res.join("×")),
+                start: Date.now(), status: "running", est: est};
+  AndroidBridge.watch(pid, server(), (WF_NAME[effWf()] || "H3") + " " + ($("line").value.trim() || $("prompt").value.trim() || "").slice(0, 24));
+  localStorage.setItem("task_" + pid, JSON.stringify(state.task));
+  paused = false; $("pauseBtn").textContent = "暂停";
+  showTaskBtns(true); startTicker();
+  poll();
+}
+
+/* 实时进度条: 每秒按已用时间/预估时间刷新, 完成时由 poll 修正为最终状态 */
+var tickTimer = null, paused = false;
+function startTicker(){
+  stopTicker();
+  tickTimer = setInterval(function(){
+    var t = state.task;
+    if(!t || t.status !== "running" || paused) return;
+    var sec = Math.round((Date.now() - t.start)/1000);
+    var est = t.est || 210;
+    var pct = Math.min(99, Math.round(sec / est * 100));
+    if(sec > est + 20){
+      setTask("解码/收尾中… 已用 " + fmtDur(sec) + "（采样已完成，电脑在合成视频，请耐心等待）", true);
+      pct = 99;
+    } else {
+      setTask("生成中 " + pct + "% · 已用 " + fmtDur(sec) + " / 预计 " + fmtDur(est), true);
+    }
+    var bi = $("taskBar").firstElementChild;
+    if(bi){ bi.style.animation = "none"; bi.style.width = pct + "%"; }
+  }, 1000);
+}
+function stopTicker(){ if(tickTimer){ clearInterval(tickTimer); tickTimer = null; } }
+function showTaskBtns(on){ $("taskBtns").style.display = on ? "flex" : "none"; }
+function pauseTask(){
+  var t = state.task;
+  if(!t || t.status !== "running"){ AndroidBridge.toast("当前没有进行中的任务"); return; }
+  paused = !paused;
+  $("pauseBtn").textContent = paused ? "继续" : "暂停";
+  if(paused){ stopTicker(); var sec = Math.round((Date.now()-t.start)/1000);
+    setTask("已暂停显示 · 电脑端仍在生成 · 已用 " + fmtDur(sec), true); }
+  else { startTicker(); poll(); }
+}
+function stopTask(){
+  var t = state.task;
+  if(!t || t.status !== "running"){ AndroidBridge.toast("当前没有进行中的任务"); return; }
+  AndroidBridge.cancelWatch(t.id);
+  stopTicker(); paused = false; $("pauseBtn").textContent = "暂停";
+  // /interrupt 取消正在跑的, /queue delete 移除还在排队的
+  jfetch(server() + "/interrupt", {method:"POST"}).catch(function(){});
+  jfetch(server() + "/queue", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({delete: [t.id]})}).catch(function(){});
+  t.status = "error"; t.stopped = true; saveTask(t);
+  setTask('<span class="err">■ 已停止</span>（已通知电脑取消）', false);
+  showTaskBtns(false);
+  $("goBtn").textContent = "生 成";
+  AndroidBridge.toast("已停止，电脑端正在取消");
+  if(!IS_WEB) AndroidBridge.keepScreen(false);
+  state.task = null;
+}
+function setTask(txt, running){
+  $("taskStatus").innerHTML = txt;
+  $("taskBar").style.display = running ? "block" : "none";
+}
+function poll(){
+  var t = state.task;
+  if(!t || t.status !== "running") return;
+  if(paused){ setTimeout(poll, 4000); return; }
+  jfetch(server() + "/history/" + t.id)
+    .then(function(r){return r.json()})
+    .then(function(j){
+      var h = j[t.id];
+      if(!h){ setTimeout(poll, 4000); return; }
+      var st = (h.status && h.status.status_str) || "";
+      if(st === "error"){ taskError(t, h); return; }
+      if(st === "success" || (h.status && h.status.completed)){ taskDone(t, h); return; }
+      var sec = Math.round((Date.now() - t.start)/1000);
+      var est = t.est || 210;
+      var pct = Math.min(99, Math.round(sec / est * 100));
+      if(sec > est + 20){
+        setTask("解码/收尾中… 已用 " + fmtDur(sec) + "（采样已完成，电脑在合成视频，请耐心等待）", true);
+        pct = 99;
+      } else {
+        setTask("生成中 " + pct + "% · 已用 " + fmtDur(sec) + " / 预计 " + fmtDur(est), true);
+      }
+      var bi = $("taskBar").firstElementChild;
+      if(bi){ bi.style.animation = "none"; bi.style.width = pct + "%"; }
+      setTimeout(poll, 4000);
+    })
+    .catch(function(){ setTimeout(poll, 6000); });
+}
+function findVideos(h){
+  var out = [];
+  var outputs = h.outputs || {};
+  Object.keys(outputs).forEach(function(nid){
+    var o = outputs[nid];
+    Object.keys(o).forEach(function(k){
+      var v = o[k];
+      if(Array.isArray(v)) v.forEach(function(it){
+        if(it && it.filename && /\.(mp4|webm|mov|mp3|wav)$/i.test(it.filename))
+          out.push({filename: it.filename, subfolder: it.subfolder || "", type: it.type || "output",
+                    kind: /\.(mp3|wav)$/i.test(it.filename) ? "audio" : "video"});
+      });
+    });
+  });
+  return out;
+}
+function execError(h){
+  try{
+    var msgs = (h.status && h.status.messages) || [];
+    for(var i=0;i<msgs.length;i++){
+      if(msgs[i][0] === "execution_error"){
+        var d = msgs[i][1] || {};
+        return (d.node_type||"?") + ": " + (d.exception_message||"未知错误");
+      }
+    }
+  }catch(e){}
+  return "执行出错";
+}
+function taskError(t, h){
+  t.status = "error"; saveTask(t);
+  stopTicker(); paused = false; $("pauseBtn").textContent = "暂停";
+  showTaskBtns(false);
+  $("goBtn").textContent = "生 成";
+  setTask('<span class="err">✗ 失败</span> ' + execError(h), false);
+  if(!IS_WEB) AndroidBridge.keepScreen(false);
+  state.task = null;
+}
+function taskDone(t, h, savedPath){
+  t.status = "success"; saveTask(t);
+  var vids = findVideos(h);
+  var sec = Math.round((Date.now()-t.start)/1000);
+  stopTicker(); paused = false; $("pauseBtn").textContent = "暂停";
+  showTaskBtns(false);
+  $("goBtn").textContent = "生 成";
+  setTask('<span class="ok">✓ 完成</span> 用时 ' + fmtDur(sec), false);
+  if(!IS_WEB) AndroidBridge.keepScreen(false);
+  state.task = null;
+  showResult(t, vids, savedPath);
+  renderHis();
+}
+function showResult(t, vids, savedPath){
+  var box = $("taskResult"); box.innerHTML = "";
+  if(savedPath){
+    var sv = document.createElement("div");
+    sv.className = "ok"; sv.style.cssText = "font-size:13px;margin-top:6px;word-break:break-all";
+    sv.textContent = "✓ 已自动保存到手机: " + savedPath;
+    box.appendChild(sv);
+  }
+  vids.forEach(function(v){
+    var url = viewUrl(v);
+    var vd = document.createElement(v.kind === "audio" ? "audio" : "video");
+    vd.controls = true; vd.src = url; if(v.kind !== "audio") vd.poster = "";
+    if(v.kind === "audio") vd.style.cssText = "width:100%;margin-top:4px";
+    box.appendChild(vd);
+    var dl = document.createElement("button");
+    dl.className = "btn2"; dl.style.marginTop = "8px";
+    dl.textContent = v.kind === "audio" ? "保存语音到手机" : "再存一份到下载";
+    dl.onclick = function(){ AndroidBridge.download(url, v.filename); AndroidBridge.toast("开始保存…"); };
+    box.appendChild(dl);
+  });
+  if(!vids.length && !savedPath) box.innerHTML = '<div class="dim">完成但没找到输出文件</div>';
+}
+function viewUrl(v){
+  return server() + "/view?filename=" + encodeURIComponent(v.filename) +
+    "&subfolder=" + encodeURIComponent(v.subfolder || "") + "&type=" + (v.type || "output");
+}
+function saveTask(t){ localStorage.setItem("task_" + t.id, JSON.stringify(t)); }
+
+/* Java 侧后台轮询的回调（切后台时由 Java 发通知+自动存视频，回来后这里同步 UI） */
+window.onJavaWatch = function(pid, status, filename, subfolder, savedPath){
+  var t = state.task;
+  if(!t || t.id !== pid) { renderHis(); return; }
+  if(status === "error"){ taskError(t, {}); return; }
+  if(status === "success"){
+    var v = [{filename: filename, subfolder: subfolder, type: "output"}];
+    if(!filename) v = [];
+    taskDone(t, {outputs: {x: {videos: v}}}, savedPath);
+  }
+};
+window.onDownloadDone = function(name, path){ AndroidBridge.toast("已保存: " + path); };
+/* Java 抽帧完成: 把缩略图贴到历史里对应的视频位置 */
+window.onPoster = function(filename, path){
+  var els = document.querySelectorAll("[data-poster]");
+  for(var i=0;i<els.length;i++) if(els[i].getAttribute("data-poster") === filename){
+    if(els[i].tagName === "IMG"){ els[i].src = path; }
+    else if(path){ els[i].style.display = "none"; }  /* 抽帧图已就位, 收起播放器 */
+  }
+};
+
+/* ---------- 历史 ---------- */
+function allTasks(){
+  var out = [];
+  for(var i=0;i<localStorage.length;i++){
+    var k = localStorage.key(i);
+    if(k && k.indexOf("task_") === 0){
+      try{ out.push(JSON.parse(localStorage.getItem(k))); }catch(e){}
+    }
+  }
+  out.sort(function(a,b){return b.start - a.start});
+  return out;
+}
+var hisDateSel = "all";   // 历史页日期筛选: "all" 或 "YYYY-MM-DD"
+function dayOf(ts){ var d = new Date(ts); return isNaN(ts) ? "未知日期" :
+  d.getFullYear() + "-" + ("0"+(d.getMonth()+1)).slice(-2) + "-" + ("0"+d.getDate()).slice(-2); }
+function renderHisInner(){
+  var box = $("hisList"), all = allTasks();
+  if(!all.length){ box.innerHTML = '<div class="card dim">还没有生成记录</div>'; return; }
+  // 日期下拉: 汇总每天条数, 按日期倒序
+  var days = {}, order = [];
+  all.forEach(function(t){ var k = dayOf(t.start); if(!days[k]){ days[k]=0; order.push(k); } days[k]++; });
+  var opts = '<option value="all"' + (hisDateSel==="all"?" selected":"") + '>全部日期 (' + all.length + ')</option>' +
+    order.map(function(k){
+      return '<option value="' + k + '"' + (hisDateSel===k?" selected":"") + '>' + k + ' (' + days[k] + ')</option>';
+    }).join("");
+  var list = (hisDateSel !== "all" && days[hisDateSel]) ? all.filter(function(t){ return dayOf(t.start) === hisDateSel; }) : all;
+  box.innerHTML = '<button class="btn2 dateBtn" onclick="hisCalOpen()">📅 ' +
+    (hisDateSel === "all" ? "全部日期 (" + all.length + ")" : hisDateSel + " (" + (days[hisDateSel] || 0) + ")") + '</button>';
+  list.forEach(function(t){
+    var d = document.createElement("div");
+    d.className = "hitem";
+    var WF_SHORT = {"tpl_t2v.json":"01文字","tpl_i2v_voice.json":"08旁白","tpl_ref_voice.json":"05口型","tpl_i2v_sovits.json":"07配音","tpl_i2v.json":"04图生","tpl_tts.json":"09TTS"};
+    var dt = new Date(t.start);
+    var ds = ("0"+(dt.getMonth()+1)).slice(-2) + "-" + ("0"+dt.getDate()).slice(-2) + " " +
+             ("0"+dt.getHours()).slice(-2) + ":" + ("0"+dt.getMinutes()).slice(-2);
+    var stTxt = t.status==="success" ? "✓成功" : t.status==="error" ? (t.stopped ? "■停止" : "✗失败") : "…执行中";
+    d.innerHTML = '<div class="hrow"><div class="t">' + ds + " " +
+      (WF_SHORT[t.wf] || t.wf) + (t.wf === "tpl_tts.json" ? "" : " " + t.frames + "帧" + t.res) + '</div>' +
+      '<div class="status ' + (t.status==="success"?"ok":t.status==="error"?"err":"warn") + '">' + stTxt + '</div></div>';
+    var row = d.querySelector(".hrow");
+    var addBtn = function(txt, color, fn, first){
+      var b = document.createElement("button");
+      b.className = "btn2"; b.textContent = txt;
+      if(color) b.style.color = color;
+      b.style.marginLeft = first ? "auto" : "6px";
+      b.onclick = fn;
+      row.appendChild(b);
+      return b;
+    };
+    if(t.status === "running"){
+      addBtn("进度", null, function(){
+        state.task = t; $("taskCard").style.display = "block";
+        $("taskTitle").textContent = t.id.slice(0,8) + " · " + t.frames + "帧 " + t.res;
+        setTask("查询中…", true); poll();
+        nav(document.querySelector('[data-pg="pg-gen"]'));
+      }, true);
+      addBtn("中断", "#f87171", function(){ state.task = t; stopTask(); });
+    } else if(t.status === "success"){
+      var isAud = t.filename && /\.(mp3|wav)$/i.test(t.filename);
+      var pd = null;
+      if(!isAud && t.filename && !IS_WEB){
+        pd = document.createElement("img");
+        pd.className = "thumb"; pd.style.cssText = "max-height:110px;max-width:196px;border-radius:8px;display:block";
+        pd.setAttribute("data-poster", t.filename);
+        d.appendChild(pd);
+        AndroidBridge.poster(viewUrl(t), t.filename);
+      }
+      var vd = document.createElement("video");
+      vd.controls = true; vd.preload = "metadata";
+      vd.style.cssText = "max-height:110px;width:auto";
+      vd.setAttribute("data-poster", t.filename || "");
+      vd.src = server() + "/view?filename=" + encodeURIComponent(t.filename || "") +
+        "&subfolder=" + encodeURIComponent(t.subfolder || "") + "&type=output";
+      /* 不再预先隐藏: 抽帧成功后 onPoster 里再收起; 失败时至少能看到视频首帧 */
+      if(!isAud && pd) vd.style.display = "none";
+      d.appendChild(vd);
+      if(!isAud && pd){
+        pd.onclick = function(){ vd.style.display = vd.style.display === "none" ? "block" : "none"; };
+      }
+      if(t.filename){
+        addBtn("下载", null, function(){
+          AndroidBridge.download(viewUrl(t), t.filename); AndroidBridge.toast("开始下载…");
+        }, true);
+      }
+    }
+    addBtn("删除", "#f87171", function(){
+      localStorage.removeItem("task_" + t.id);
+      if(state.task && state.task.id === t.id){ state.task = null; stopTicker(); showTaskBtns(false); }
+      renderHis();
+      AndroidBridge.toast("已删除该记录");
+    });
+    box.appendChild(d);
+  });
+}
+
+/* ---------- 历史日期日历弹窗 ---------- */
+var hisCalYM = null; // [year, month0]
+function hisCalOpen(){
+  var y, m;
+  if(hisDateSel !== "all"){ y = +hisDateSel.slice(0,4); m = +hisDateSel.slice(5,7) - 1; }
+  else { var n = new Date(); y = n.getFullYear(); m = n.getMonth(); }
+  hisCalYM = [y, m];
+  var mask = document.createElement("div");
+  mask.id = "calMask";
+  mask.className = "calMask";
+  mask.onclick = function(e){ if(e.target === mask) hisCalClose(); };
+  document.body.appendChild(mask);
+  hisCalRender();
+}
+function hisCalClose(){ var el = $("calMask"); if(el) el.remove(); }
+function hisCalNav(d){ hisCalYM[1] += d; if(hisCalYM[1] < 0){ hisCalYM[1] = 11; hisCalYM[0]--; } if(hisCalYM[1] > 11){ hisCalYM[1] = 0; hisCalYM[0]++; } hisCalRender(); }
+function hisCalRender(){
+  var mask = $("calMask"); if(!mask) return;
+  var y = hisCalYM[0], m = hisCalYM[1];
+  // 每天记录数
+  var cnt = {};
+  allTasks().forEach(function(t){ var k = dayOf(t.start); if(k !== "未知日期") cnt[k] = (cnt[k] || 0) + 1; });
+  var first = new Date(y, m, 1).getDay();      // 0=周日
+  var nDays = new Date(y, m + 1, 0).getDate();
+  var cells = "";
+  ["日","一","二","三","四","五","六"].forEach(function(w){ cells += '<div class="calWd">' + w + '</div>'; });
+  for(var i = 0; i < first; i++) cells += '<div class="calDay empt"></div>';
+  for(var d = 1; d <= nDays; d++){
+    var ds = y + "-" + ("0" + (m + 1)).slice(-2) + "-" + ("0" + d).slice(-2);
+    var has = cnt[ds] || 0;
+    cells += '<div class="calDay' + (has ? " has" : "") + (hisDateSel === ds ? " sel" : "") +
+      '" onclick="hisCalPick(\'' + ds + '\')">' + d +
+      (has ? '<span class="calCnt">' + has + '</span>' : "") + '</div>';
+  }
+  var total = 0; for(var k in cnt) total += cnt[k];
+  mask.innerHTML = '<div class="calBox">' +
+    '<div class="calHead"><button onclick="hisCalNav(-1)">‹</button><b>' + y + '年' + (m + 1) + '月</b><button onclick="hisCalNav(1)">›</button></div>' +
+    '<div class="calGrid">' + cells + '</div>' +
+    '<div class="calFoot"><button onclick="hisCalAll()">全部 (' + total + ')</button><button onclick="hisCalClose()">取消</button></div>' +
+    '</div>';
+}
+function hisCalPick(ds){ hisDateSel = ds; hisCalClose(); renderHisInner(); }
+function hisCalAll(){ hisDateSel = "all"; hisCalClose(); renderHisInner(); }
+
+/* 历史任务补存输出文件名（taskDone 时顺便记） */
+/* 渲染历史前, 给没有文件名的 success 记录补查一次服务器, 否则既没预览也没下载按钮 */
+function ensureFilenames(cb){
+  var missing = allTasks().filter(function(t){ return t.status==="success" && !t.filename; });
+  if(!missing.length){ cb(); return; }
+  var left = missing.length;
+  missing.forEach(function(t){
+    jfetch(server() + "/history/" + t.id, {method:"GET"})
+      .then(function(r){ return r.json(); })
+      .then(function(h){
+        var e = h && h[t.id], fname = null, sub = "";
+        if(e && e.outputs){
+          Object.keys(e.outputs).forEach(function(k){
+            var arr = e.outputs[k];
+            Object.keys(arr).forEach(function(k2){
+              var f0 = arr[k2] && arr[k2][0];
+              if(f0 && f0.filename){ fname = f0.filename; sub = f0.subfolder || ""; }
+            });
+          });
+        }
+        var cur = JSON.parse(localStorage.getItem("task_" + t.id) || "null");
+        if(cur){ cur.filename = fname || ""; cur.subfolder = sub;
+          localStorage.setItem("task_" + t.id, JSON.stringify(cur)); }
+      })
+      .catch(function(){})
+      .then(function(){ if(--left === 0) cb(); });
+  });
+}
+function renderHis(){
+  ensureFilenames(function(){ renderHisInner(); });
+}
+var _origDone = taskDone;
+taskDone = function(t, h, savedPath){
+  var vids = findVideos(h);
+  if(vids[0]){ t.filename = vids[0].filename; t.subfolder = vids[0].subfolder; t.type = vids[0].type || "output"; }
+  _origDone(t, h, savedPath);
+};
+
+/* 启动：恢复运行中的任务轮询 */
+(function(){
+  var list = allTasks();
+  var run = list.find(function(t){return t.status === "running"});
+  if(run){
+    state.task = run;
+    $("taskCard").style.display = "block";
+    $("taskTitle").textContent = (WF_NAME[run.wf] || run.wf) + " · " + run.id.slice(0,8) +
+      (run.wf === "tpl_tts.json" ? "" : " · " + run.frames + "帧 " + run.res);
+    setTask("恢复查询…", true);
+    showTaskBtns(true); startTicker();
+    poll();
+  }
+})();
+</script>
+</body>
+</html>
