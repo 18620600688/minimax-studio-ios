@@ -33,7 +33,6 @@ class WebVC: UIViewController, WKScriptMessageHandler, WKUIDelegate {
         cfg.userContentController.add(self, name: BR_NAME)
         cfg.userContentController.addUserScript(
             WKUserScript(source: Self.injectJs(), injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        cfg.preferences.setValue(true, forKey: "developerExtrasEnabled")
 
         web = WKWebView(frame: .zero, configuration: cfg)
         web.uiDelegate = self
@@ -64,7 +63,9 @@ class WebVC: UIViewController, WKScriptMessageHandler, WKUIDelegate {
           var pending = {}, seq = 0;
           function send(p){ p.i = ++seq; window.webkit.messageHandlers.\(BR_NAME).postMessage(p);
             return new Promise(function(res){ pending[p.i] = res; }); }
-          window.__brCb = function(i, json){ var f = pending[i]; if(f){ delete pending[i]; f(json); } };
+          window.__brCb = function(i, json){
+            var f = pending[i]; if(f){ delete pending[i];
+              f(typeof json === 'string' ? json : JSON.stringify(json)); } };
           function toast(msg){
             var d = document.createElement('div');
             d.textContent = msg;

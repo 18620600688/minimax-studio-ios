@@ -41,6 +41,8 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>连接同一 WiFi 下电脑上的 ComfyUI 服务器需要本地网络权限</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>保存生成的视频和音频到相册</string>
 </dict>
