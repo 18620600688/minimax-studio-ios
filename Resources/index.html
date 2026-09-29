@@ -92,6 +92,17 @@ audio,video{width:100%;margin-top:8px;border-radius:10px}
 .histItem .histDel{flex:none;color:#e5484d;font-size:15px;padding:2px 8px;cursor:pointer;user-select:none}
 .histItem:last-child{border-bottom:none}
 .histItem:active{background:rgba(255,255,255,.06)}
+/* 外网登录弹层 */
+#loginMask{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:300;display:flex;align-items:center;justify-content:center}
+#loginMask.hide{display:none}
+#loginCard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 22px 18px;width:320px;max-width:90%;position:relative}
+#loginCard h2{font-size:18px;margin:0 0 4px}
+#loginCard p{font-size:12px;color:var(--dim);margin:0 0 16px;line-height:1.4}
+#loginCard label{display:block;font-size:12px;color:var(--dim);margin:10px 0 4px}
+#loginCard input{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:8px;font-size:14px;background:#12141a;color:var(--txt)}
+#loginCard .btn{margin-top:18px}
+#loginCard .btn2{width:100%;margin-top:8px;color:var(--dim)}
+#loginCard #loginErr{color:#f87171;font-size:12px;margin-top:8px;min-height:15px}
 </style>
 </head>
 <body>
@@ -284,6 +295,7 @@ if(IS_WEB){
       setTimeout(function(){ d.remove(); }, 2200);
     },
     watch: function(){}, cancelWatch: function(){}, poster: function(){},
+    setAuth: function(t){},   // 网页版无需原生鉴权转发, 留空
     download: function(url, filename){
       fetch(url).then(function(r){ return r.blob(); }).then(function(b){
         var a = document.createElement("a");
@@ -401,6 +413,7 @@ function jfetch(url, opts){
   opts = opts || {};
   if(IS_WEB){
     var init = {method: opts.method || "GET", headers: opts.headers || {}};
+    var _ah = authHeaderValue(); if(_ah) init.headers["Authorization"] = _ah;   // 外网 Basic 鉴权
     if(opts.body){
       if(opts.body.__b64){
         var bin = atob(opts.body.__b64), u8 = new Uint8Array(bin.length);
@@ -953,6 +966,12 @@ $("vidIn").onchange = function(){
 
 /* ---------- 设置 ---------- */
 $("server").value = localStorage.getItem("server") || "http://mrsand.top:8188";   // 首次运行默认地址
+/* 外网登录: 启动时恢复已存凭据到原生桥(若有)，并探测是否需要登录 */
+(function(){
+  var t = getAuthToken();
+  if(t){ try{ if(window.AndroidBridge && AndroidBridge.setAuth) AndroidBridge.setAuth(t); }catch(e){} }
+  setTimeout(probeAuth, 300);
+})();
 
 /* 常用地址快捷选择: 点选即填+保存+测连接 */
 document.querySelectorAll("#srvRow .chip").forEach(function(b){
@@ -972,12 +991,60 @@ function saveServer(){
   localStorage.setItem("server", server());
   AndroidBridge.toast("已保存");
 }
+/* ---------- 外网登录(账号密码 / HTTP Basic Auth) ---------- */
+var AUTH_KEY = "authToken";   // 存 base64(user:pass)，空表示免鉴权
+function getAuthToken(){ try{ return localStorage.getItem(AUTH_KEY) || ""; }catch(e){ return ""; } }
+function authHeaderValue(){ var t = getAuthToken(); return t ? ("Basic " + t) : ""; }
+function setAuth(token){   // token = base64(user:pass)，空串表示清空；同时推给原生桥
+  try{ if(token) localStorage.setItem(AUTH_KEY, token); else localStorage.removeItem(AUTH_KEY); }catch(e){}
+  try{ if(window.AndroidBridge && AndroidBridge.setAuth) AndroidBridge.setAuth(token || ""); }catch(e){}
+}
+var loginOpen = false;
+function showLogin(msg){
+  if(loginOpen) return; loginOpen = true;
+  var m = $("loginMask"); if(!m){ return; }
+  if(msg) $("loginHint").textContent = msg;
+  $("loginErr").textContent = "";
+  m.classList.remove("hide");
+  // 有保存的账号时回填(从 base64 解出 user)
+  var t = getAuthToken();
+  if(t && !$("lgUser").value){
+    try{ var up = decodeURIComponent(escape(atob(t))); $("lgUser").value = up.split(":")[0]; }catch(e){}
+  }
+  setTimeout(function(){ try{ $("lgPass").focus(); }catch(e){} }, 60);
+}
+function hideLogin(){ loginOpen = false; var m = $("loginMask"); if(m) m.classList.add("hide"); }
+function doLogin(){
+  var u = ($("lgUser").value || "").trim();
+  var p = $("lgPass").value || "";
+  if(!u){ $("loginErr").textContent = "请输入账号"; return; }
+  if(!p){ $("loginErr").textContent = "请输入密码"; return; }
+  var tok = btoa(unescape(encodeURIComponent(u + ":" + p)));
+  setAuth(tok);                              // 先让两端都带上新凭据再做校验
+  $("loginErr").textContent = "验证中…";
+  jfetch(server() + "/system_stats").then(function(r){
+    if(r.status === 200){ hideLogin(); AndroidBridge.toast("登录成功"); testConn(); }
+    else if(r.status === 401){ setAuth(""); $("loginErr").textContent = "账号或密码不对，再试一次"; }
+    else { $("loginErr").textContent = "连接失败(HTTP " + r.status + ")，检查地址"; }
+  }).catch(function(e){ setAuth(""); $("loginErr").textContent = "网络错误：" + e; });
+}
+function probeAuth(){
+  jfetch(server() + "/system_stats").then(function(r){
+    if(r.status === 401) showLogin("外网访问需要登录 · 本机 / 局域网免登录");
+  }).catch(function(){});
+}
+
 function testConn(){
   var s = server();
   if(!s){ $("connInfo").innerHTML = '<span class="err">请先填地址</span>'; return; }
   localStorage.setItem("server", s);
   $("connInfo").textContent = "连接中…";
-  jfetch(s + "/system_stats").then(function(r){return r.json()}).then(function(j){
+  jfetch(s + "/system_stats").then(function(r){
+    if(r.status === 401){ showLogin("外网访问需要登录 · 本机 / 局域网免登录"); return; }
+    if(r.status !== 200){ throw new Error("HTTP " + r.status); }
+    return r.json();
+  }).then(function(j){
+    if(!j) return;
     var gpu = (j.devices && j.devices[0]) ? j.devices[0].name : "?";
     $("connInfo").innerHTML = '<span class="ok">✓ 连接成功</span> · ' + gpu;
   }).catch(function(e){
@@ -1568,6 +1635,25 @@ taskDone = function(t, h, savedPath){
     poll();
   }
 })();
+</script>
+
+<!-- 外网登录弹层 -->
+<div id="loginMask" class="hide">
+  <div id="loginCard">
+    <h2>YUNET MiniMax 登录</h2>
+    <p id="loginHint">外网访问需要登录 · 本机 / 局域网免登录</p>
+    <label>账号</label><input id="lgUser" type="text" placeholder="admin" autocomplete="username">
+    <label>密码</label><input id="lgPass" type="password" placeholder="" autocomplete="current-password">
+    <button class="btn" onclick="doLogin()">登 录</button>
+    <div id="loginErr"></div>
+    <button class="btn2" onclick="hideLogin()">稍后再说</button>
+  </div>
+</div>
+<script>
+document.addEventListener("keydown", function(e){
+  if(e.key === "Enter" && !document.getElementById("loginMask").classList.contains("hide")
+     && e.target.id !== "lgUser"){ doLogin(); }
+});
 </script>
 </body>
 </html>

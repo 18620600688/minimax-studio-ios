@@ -24,6 +24,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 
 class WebVC: UIViewController, WKScriptMessageHandler, WKUIDelegate {
     var web: WKWebView!
+    var authHeader: String = ""   // 外网登录: "Basic " + base64(user:pass)，空表示免鉴权
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -76,6 +77,7 @@ class WebVC: UIViewController, WKScriptMessageHandler, WKUIDelegate {
           window.AndroidBridge = {
             toast: toast,
             watch: function(){}, cancelWatch: function(){}, poster: function(){},
+            setAuth: function(t){ window.webkit.messageHandlers.\(BR_NAME).postMessage({a:'setAuth', t: t || ''}); },
             keepScreen: function(on){ window.webkit.messageHandlers.\(BR_NAME).postMessage({a:'keep', v: !!on}); },
             http: function(url, method, bodyB64, ct){
               return send({a:'http', u:url, m:method||'GET', b:bodyB64||'', ct:ct||''});
@@ -95,6 +97,7 @@ class WebVC: UIViewController, WKScriptMessageHandler, WKUIDelegate {
         case "http":     doHttp(msg)
         case "asset":    doAsset(msg)
         case "download": doDownload(msg)
+        case "setAuth":  authHeader = (msg["t"] as? String ?? "")
         case "keep":
             DispatchQueue.main.async { UIApplication.shared.isIdleTimerDisabled = (msg["v"] as? Bool ?? false) }
         default: break
@@ -123,6 +126,7 @@ class WebVC: UIViewController, WKScriptMessageHandler, WKUIDelegate {
         req.httpMethod = msg["m"] as? String ?? "GET"
         let ct = msg["ct"] as? String ?? ""
         if !ct.isEmpty { req.setValue(ct, forHTTPHeaderField: "Content-Type") }
+        if !authHeader.isEmpty { req.setValue("Basic " + authHeader, forHTTPHeaderField: "Authorization") }
         if let b64 = msg["b"] as? String, !b64.isEmpty, let data = Data(base64Encoded: b64) {
             req.httpBody = data
             if ct.isEmpty { req.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type") }
@@ -159,7 +163,9 @@ class WebVC: UIViewController, WKScriptMessageHandler, WKUIDelegate {
             cb(id, "{\"err\":\"bad url\"}"); return
         }
         let name = msg["n"] as? String ?? us.lastPathComponent
-        let task = URLSession.shared.downloadTask(with: us) { loc, resp, err in
+        var dreq = URLRequest(url: us, timeoutInterval: 120)
+        if !authHeader.isEmpty { dreq.setValue("Basic " + authHeader, forHTTPHeaderField: "Authorization") }
+        let task = URLSession.shared.downloadTask(with: dreq) { loc, resp, err in
             if err != nil || loc == nil {
                 self.cb(id, "{\"err\":\"\(Self.jsStr(err?.localizedDescription ?? "download failed"))\"}")
                 return
