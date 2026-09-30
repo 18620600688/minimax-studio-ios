@@ -1207,7 +1207,7 @@ function testConn(){
 }
 
 /* ---------- 标题自定义 (logo 图片 + 文字) ---------- */
-var APP_VER = "V27";   // 每次改版自动 +1（由 tools/bump_ver.py 维护，别手改）
+var APP_VER = "V28";   // 每次改版自动 +1（由 tools/bump_ver.py 维护，别手改）
 function applyBranding(){
   var lt = localStorage.getItem("cfg_title");
   $("logoTxt").textContent = lt || "YUNET SAND-AI";
@@ -1456,17 +1456,45 @@ function stopTask(){
   if(!t || t.status !== "running"){ AndroidBridge.toast("当前没有进行中的任务"); return; }
   AndroidBridge.cancelWatch(t.id);
   stopTicker(); paused = false; $("pauseBtn").textContent = "暂停";
-  // /interrupt 取消正在跑的, /queue delete 移除还在排队的
-  jfetch(server() + "/interrupt", {method:"POST"}).catch(function(){});
-  jfetch(server() + "/queue", {method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({delete: [t.id]})}).catch(function(){});
-  t.status = "error"; t.stopped = true; saveTask(t);
-  setTask('<span class="err">■ 已停止</span>（已通知电脑取消）', false);
-  showTaskBtns(false);
-  $("goBtn").textContent = "生 成";
-  AndroidBridge.toast("已停止，电脑端正在取消");
-  if(!IS_WEB) AndroidBridge.keepScreen(false);
-  state.task = null;
+  var s = server();
+  $("goBtn").disabled = true; $("goBtn").textContent = "停止中…";
+  setTask('<span class="err">■ 正在停止…</span>', false);
+
+  var settle = function(note, toast){
+    t.status = "error"; t.stopped = true; saveTask(t);
+    setTask('<span class="err">■ 已停止</span>' + (note ? "（" + note + "）" : ""), false);
+    showTaskBtns(false);
+    $("goBtn").disabled = false; $("goBtn").textContent = "生 成";
+    AndroidBridge.toast(toast || "已停止");
+    if(!IS_WEB) AndroidBridge.keepScreen(false);
+    state.task = null;
+  };
+  /* 首选电脑端代理的 /wbstop：它会先 /interrupt，停不下来就强制重启服务，
+     保证电脑真的不再渲染（H3 流程的 interrupt 经常无效，光发 /interrupt 没用）。 */
+  jfetch(s + "/wbstop", {method:"POST"})
+    .then(function(r){
+      if(!r || r.status !== 200) throw new Error("no wbstop");
+      return r.json();
+    })
+    .then(function(res){
+      var act = (res && res.action) || "";
+      var msg = (res && res.msg) || "";
+      if(act === "restarted")
+        settle((msg || "已重启服务") + "，约 40 秒后恢复", "已强制停止，电脑端服务重启中");
+      else if(act === "restart-failed")
+        settle(msg || "强制重启失败", "停止失败：" + (msg || "请到电脑端手动停止"));
+      else if(act === "idle")
+        settle("电脑端本来就没在跑", "已停止");
+      else
+        settle(msg || "电脑端已取消", "已停止，电脑端不再渲染");
+    })
+    .catch(function(){
+      // 老接口兜底（直连 8189 / 代理版本旧）：只能请求取消，不保证真停
+      jfetch(s + "/interrupt", {method:"POST"}).catch(function(){});
+      jfetch(s + "/queue", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({delete: [t.id]})}).catch(function(){});
+      settle("已通知电脑取消", "已停止，电脑端正在取消");
+    });
 }
 function setTask(txt, running){
   $("taskStatus").innerHTML = txt;
