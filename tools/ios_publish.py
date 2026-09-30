@@ -31,8 +31,31 @@ def gh_user():
     st, j = req("GET", API + "/user")
     return j.get("login")
 
+def _git_proxy_args():
+    """本机直连 github.com:443 经常被运营商/防火墙掐断，先看有没有活着的本地代理。
+
+    实测：Clash Verge Rev 的混合端口 7897 可用；之前记的 60592 隧道经常没在监听。
+    返回要插到 `git` 后面的参数列表（无代理就是空列表，行为不变）。
+    """
+    import socket
+    for port in (7897, 60592, 7890, 10809, 1080):
+        s = socket.socket()
+        s.settimeout(0.6)
+        try:
+            s.connect(("127.0.0.1", port))
+        except OSError:
+            continue
+        finally:
+            s.close()
+        print("git: 使用本机代理 127.0.0.1:%d" % port)
+        return ["-c", "http.proxy=http://127.0.0.1:%d" % port,
+                "-c", "https.proxy=http://127.0.0.1:%d" % port]
+    return []
+
+
 def push_repo(user, repo):
     import subprocess
+    gproxy = _git_proxy_args()
     subprocess.run(["git", "init", "-b", "main"], cwd=ROOT, check=True, capture_output=True)
     subprocess.run(["git", "add", "-A"], cwd=ROOT, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "MiniMax iOS shell"], cwd=ROOT,
@@ -42,7 +65,8 @@ def push_repo(user, repo):
                    cwd=ROOT, capture_output=True)
     subprocess.run(["git", "-c", "credential.helper=", "remote", "add", "origin", url],
                    cwd=ROOT, check=True, capture_output=True)
-    subprocess.run(["git", "-c", "credential.helper=", "push", "-u", "origin", "main"],
+    subprocess.run(["git", "-c", "credential.helper="] + gproxy +
+                   ["push", "-u", "origin", "main"],
                    cwd=ROOT, check=True, capture_output=True)
     print("pushed ->", user + "/" + repo)
     # 回退 2s 保险: 之后 wait_run 只认这个时刻之后创建的运行
