@@ -1207,7 +1207,7 @@ function testConn(){
 }
 
 /* ---------- 标题自定义 (logo 图片 + 文字) ---------- */
-var APP_VER = "V29";   // 每次改版自动 +1（由 tools/bump_ver.py 维护，别手改）
+var APP_VER = "V30";   // 每次改版自动 +1（由 tools/bump_ver.py 维护，别手改）
 function applyBranding(){
   var lt = localStorage.getItem("cfg_title");
   $("logoTxt").textContent = lt || "YUNET SAND-AI";
@@ -1324,14 +1324,22 @@ function doSubmit(){
         jfetch(s + "/prompt", {method:"POST",
           headers:{"Content-Type":"application/json"},
           body: JSON.stringify({prompt: payload, client_id: "minimaxapp"})})
-          .then(function(r){return r.json()})
+          .then(function(r){
+            if(!r || r.status >= 500) throw new Error(r ? ("HTTP " + r.status) : "no-response");
+            return r.json();
+          })
           .then(function(resp){
             if(!resp.prompt_id || (resp.node_errors && Object.keys(resp.node_errors).length)){
               fail("提交被拒绝: " + JSON.stringify(resp.node_errors || resp)); return;
             }
             onSubmitted(resp.prompt_id);
           })
-          .catch(function(e){ fail("提交失败：" + e); });
+          .catch(function(e){
+            var m = String(e && e.message ? e.message : e);
+            if(/HTTP 5|no-response|Failed to fetch|timeout/i.test(m))
+              fail("电脑端服务未运行或已停止（" + m + "），请到电脑上确认 MiniMax 控制台");
+            else fail("提交失败：" + m);
+          });
       };
       if(isRef && state.vid){
         upload(state.vid, function(ev, vn){ vidName = vn; after(); });
@@ -1415,13 +1423,13 @@ function onSubmitted(pid){
                 start: Date.now(), status: "running", est: est};
   AndroidBridge.watch(pid, server(), (WF_NAME[effWf()] || "H3") + " " + ($("line").value.trim() || $("prompt").value.trim() || "").slice(0, 24));
   localStorage.setItem("task_" + pid, JSON.stringify(state.task));
-  paused = false; $("pauseBtn").textContent = "暂停";
+  paused = false; $("pauseBtn").textContent = "暂停"; pollFail = 0;
   showTaskBtns(true); startTicker();
   poll();
 }
 
 /* 实时进度条: 每秒按已用时间/预估时间刷新, 完成时由 poll 修正为最终状态 */
-var tickTimer = null, paused = false;
+var tickTimer = null, paused = false, pollFail = 0;
 function startTicker(){
   stopTicker();
   tickTimer = setInterval(function(){
@@ -1430,6 +1438,14 @@ function startTicker(){
     var sec = Math.round((Date.now() - t.start)/1000);
     var est = t.est || 210;
     var pct = Math.min(99, Math.round(sec / est * 100));
+    if(pollFail > 0){
+      // 服务端连不上时不要继续假装“生成中”，如实显示重试状态
+      setTask('<span class="err">⚠ 连不上电脑端</span>（第 ' + pollFail + " 次重试）· 已用 " + fmtDur(sec) +
+              (pollFail >= 2 ? " · 服务可能已停止" : ""), true);
+      var bf = $("taskBar").firstElementChild;
+      if(bf){ bf.style.animation = "none"; bf.style.width = pct + "%"; }
+      return;
+    }
     if(sec > est + 20){
       setTask("解码/收尾中… 已用 " + fmtDur(sec) + "（采样已完成，电脑在合成视频，请耐心等待）", true);
       pct = 99;
@@ -1505,8 +1521,12 @@ function poll(){
   if(!t || t.status !== "running") return;
   if(paused){ setTimeout(poll, 4000); return; }
   jfetch(server() + "/history/" + t.id)
-    .then(function(r){return r.json()})
+    .then(function(r){
+      if(!r || r.status >= 400) throw new Error("http " + (r ? r.status : "no-response"));
+      return r.json();
+    })
     .then(function(j){
+      pollFail = 0;
       var h = j[t.id];
       if(!h){ setTimeout(poll, 4000); return; }
       var st = (h.status && h.status.status_str) || "";
@@ -1525,7 +1545,27 @@ function poll(){
       if(bi){ bi.style.animation = "none"; bi.style.width = pct + "%"; }
       setTimeout(poll, 4000);
     })
-    .catch(function(){ setTimeout(poll, 6000); });
+    .catch(function(){
+      // 服务端崩了（ComfyUI 进程没了 → 代理返回 502）时不要无限重试，
+      // 连续 3 次拿不到状态就判定服务已停，停掉倒计时如实告知。
+      pollFail++;
+      if(pollFail >= 3){ serverGone(t); return; }
+      setTimeout(poll, 5000);
+    });
+}
+/* 电脑端服务中断：停止倒计时，避免手机一直空转等待 */
+function serverGone(t){
+  pollFail = 0;
+  if(t){ t.status = "error"; t.gone = true; saveTask(t); }
+  stopTicker(); paused = false; $("pauseBtn").textContent = "暂停";
+  showTaskBtns(false);
+  $("goBtn").disabled = false; $("goBtn").textContent = "生 成";
+  setTask('<span class="err">✗ 服务器已停止</span> 连续多次连不上电脑端，' +
+          '本次任务结果未知，请到电脑端确认后重新生成', false);
+  if(!IS_WEB) AndroidBridge.toast("连不上电脑，服务可能已停止");
+  else alert("连不上电脑，服务可能已停止");
+  if(!IS_WEB) AndroidBridge.keepScreen(false);
+  state.task = null;
 }
 function findVideos(h){
   var out = [];
@@ -1818,6 +1858,7 @@ taskDone = function(t, h, savedPath){
     $("taskTitle").textContent = (WF_NAME[run.wf] || run.wf) + " · " + run.id.slice(0,8) +
       (run.wf === "tpl_tts.json" ? "" : " · " + run.frames + "帧 " + run.res);
     setTask("恢复查询…", true);
+    pollFail = 0;
     showTaskBtns(true); startTicker();
     poll();
   }
