@@ -49,9 +49,9 @@ button{font-family:inherit}
 audio,video{width:100%;margin-top:8px;border-radius:10px}
 .dim{color:var(--dim);font-size:13px}
 .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:#f87171}
-.nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--line)}
-.nav button{flex:1;padding:12px;background:none;border:none;color:var(--dim);font-size:13px}
-.nav button.on{color:var(--acc)}
+.nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding:2px 3px}
+.nav button{flex:1;padding:11px 6px;margin:0 4px;background:none;border:none;border-radius:9px;color:var(--dim);font-size:13px;font-weight:600;letter-spacing:.5px}
+.nav button.on{color:var(--acc);background:rgba(255,92,56,.12);border-top:2px solid var(--acc)}
 .page{display:none} .page.on{display:block}
 .hitem{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:9px 10px;margin-bottom:7px}
 .dateSel{margin-bottom:8px;font-size:14px;padding:8px 10px}
@@ -225,7 +225,7 @@ audio,video{width:100%;margin-top:8px;border-radius:10px}
 <button class="btn" id="goBtn" onclick="onGo()">生 成</button>
 <div style="height:10px"></div>
 <div class="card">
-  <div class="lblrow"><div class="lbl">服务器状态</div><span class="dim" id="srvGpuName" style="font-size:10.5px;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span></div>
+  <div class="lblrow"><div class="lbl">服务器状态</div><span class="dim" id="srvGpuName" style="font-size:10.5px;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span><span id="srvGpuTemp" style="font-size:10.5px;margin-left:6px;white-space:nowrap"></span></div>
   <div id="srvMon"></div>
 </div>
 </div></div>
@@ -248,6 +248,7 @@ audio,video{width:100%;margin-top:8px;border-radius:10px}
   <div class="row" style="margin-top:10px">
     <button class="btn2" onclick="testConn()">测试连接</button>
     <button class="btn2" onclick="saveServer()">保存</button>
+    <button class="btn2" id="btnLanIp" onclick="fillLanIp()">同一个IP</button>
   </div>
   <div class="dim" style="margin-top:8px" id="connInfo">电脑需与手机同一 WiFi；ComfyUI 需加 --listen 0.0.0.0 才能被手机访问</div>
 </div>
@@ -336,6 +337,34 @@ function nav(btn){
 function pick(inputId){ $(inputId).click(); }
 function server(){ return ($("server").value||"").trim().replace(/\/+$/,""); }
 
+/* ---------- GPU 温度配色（与电脑端控制台完全一致）----------
+   <40 绿 · <60 蓝 · <80 红加粗 · <90 闪烁粗体红(500ms) · >=90 爆闪(200ms)+大一号粗体 */
+var srvTempBlink = null;
+function srvSetTemp(t){
+  var el = $("srvGpuTemp");
+  if(!el) return;
+  if(srvTempBlink){ clearInterval(srvTempBlink); srvTempBlink = null; }
+  el.style.opacity = "1";
+  if(t == null){ el.textContent = ""; return; }
+  var col, weight, blink, size;
+  if(t < 40)      { col = "#16a34a"; weight = "normal"; blink = 0;   size = "10.5px"; }
+  else if(t < 60) { col = "#2563eb"; weight = "normal"; blink = 0;   size = "10.5px"; }
+  else if(t < 80) { col = "#dc2626"; weight = "bold";   blink = 0;   size = "10.5px"; }
+  else if(t < 90) { col = "#dc2626"; weight = "bold";   blink = 500; size = "10.5px"; }
+  else            { col = "#dc2626"; weight = "bold";   blink = 200; size = "13px";   }
+  el.textContent = " GPU " + Math.round(t) + "\u00b0C";
+  el.style.color = col;
+  el.style.fontWeight = weight;
+  el.style.fontSize = size;
+  if(blink){
+    var on = true;
+    srvTempBlink = setInterval(function(){
+      on = !on;
+      el.style.opacity = on ? "1" : "0.15";
+    }, blink);
+  }
+}
+
 /* ---------- 服务器状态: CPU/GPU/内存/显存 动态条形图 (设置页, 每3秒刷新) ---------- */
 var SRV_METRICS = [
   {key:"cpu",  label:"CPU",  color:"#4da3ff"},
@@ -378,14 +407,40 @@ function srvSpark(key){
   });
   ctx.globalAlpha = 1;
 }
+/* 被 401/403 拒绝后暂停轮询：未登录时每 3 秒刷一次会把自己的 IP 刷进服务端
+   的「突发洪泛」封禁，结果就是怎么登录都吃 403、看起来像「验证不了」。 */
+var srvHalt = false;
 function srvTick(){
+  if(srvHalt) return;
   if(!$("pg-gen").classList.contains("on")) return;      // 只在生成页刷新
   var s = server();
-  if(!s){ $("srvGpuName").textContent = ""; SRV_METRICS.forEach(function(m){ srvRows[m.key].val.textContent = "未填服务器地址"; }); return; }
+  if(!s){ $("srvGpuName").textContent = ""; srvSetTemp(null); SRV_METRICS.forEach(function(m){ srvRows[m.key].val.textContent = "未填服务器地址"; }); return; }
   jfetch(s + "/wbmon/stats")
-    .then(function(r){ return r.json(); })
+    .then(function(r){
+      if(r.status === 401){
+        srvHalt = true;
+        srvSetTemp(null);
+        showLogin("外网访问需要登录 · 本机 / 局域网免登录");
+        return null;
+      }
+      if(r.status === 403){
+        srvHalt = true;
+        srvSetTemp(null);
+        SRV_METRICS.forEach(function(m){ srvRows[m.key].val.textContent = "已被服务端限流/封禁"; });
+        return null;
+      }
+      if(r.status === 530 || r.status === 502 || r.status === 503){
+        srvHalt = true;
+        srvSetTemp(null);
+        SRV_METRICS.forEach(function(m){ srvRows[m.key].val.textContent = "外网服务未就绪"; });
+        return null;
+      }
+      return r.json();
+    })
     .then(function(d){
+      if(!d) return;
       $("srvGpuName").textContent = d.gpu ? d.gpu.name.replace("NVIDIA GeForce ","") : "";
+      srvSetTemp(d.gpu ? d.gpu.temp : null);
       var vals = {cpu: d.cpu!=null ? Math.round(d.cpu) : null,
                   gpu: d.gpu ? d.gpu.util : null,
                   ram: d.ram ? srvPct(d.ram.used, d.ram.total) : null,
@@ -402,6 +457,7 @@ function srvTick(){
     })
     .catch(function(){
       $("srvGpuName").textContent = "";
+      srvSetTemp(null);
       SRV_METRICS.forEach(function(m){ srvRows[m.key].val.textContent = "电脑离线"; });
     });
 }
@@ -989,7 +1045,41 @@ function srvChips(){
 srvChips();
 function saveServer(){
   localStorage.setItem("server", server());
-  AndroidBridge.toast("已保存");
+  try{ AndroidBridge.toast("已保存"); }catch(e){}
+}
+
+/* 「同一个IP」：手机没法凭空知道电脑的局域网 IP，就朝当前能连通的那个地址
+   问一句 /wblan/ip，电脑把自己所有私网地址报回来，直接填进输入框并保存。
+   典型用法：先用外网地址连上一次（能登录），再点它切回局域网直连。 */
+function fillLanIp(){
+  var btn = $("btnLanIp");
+  var s = server();
+  if(!s){
+    try{ s = localStorage.getItem("server") || ""; }catch(e){ s = ""; }
+  }
+  if(!s){
+    try{ AndroidBridge.toast("先填一个能连通的地址（外网也行），再点这个按钮"); }catch(e){}
+    return;
+  }
+  if(btn){ btn.disabled = true; btn.textContent = "查询中…"; }
+  var done = function(){ if(btn){ btn.disabled = false; btn.textContent = "同一个IP"; } };
+  jfetch(s + "/wblan/ip")
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      var list = (j && j.lan) || [];
+      if(!list.length){
+        try{ AndroidBridge.toast("没查到局域网地址（电脑可能没连 WiFi）"); }catch(e){}
+        return;
+      }
+      $("server").value = list[0];
+      try{ localStorage.setItem("server", list[0]); }catch(e){}
+      try{ AndroidBridge.toast("已填入 " + list[0]); }catch(e){}
+      testConn();
+    })
+    .catch(function(){
+      try{ AndroidBridge.toast("查询失败：当前地址连不通"); }catch(e){}
+    })
+    .then(done);
 }
 /* ---------- 外网登录(账号密码 / HTTP Basic Auth) ---------- */
 var AUTH_KEY = "authToken";   // 存 base64(user:pass)，空表示免鉴权
@@ -998,6 +1088,25 @@ function authHeaderValue(){ var t = getAuthToken(); return t ? ("Basic " + t) : 
 function setAuth(token){   // token = base64(user:pass)，空串表示清空；同时推给原生桥
   try{ if(token) localStorage.setItem(AUTH_KEY, token); else localStorage.removeItem(AUTH_KEY); }catch(e){}
   try{ if(window.AndroidBridge && AndroidBridge.setAuth) AndroidBridge.setAuth(token || ""); }catch(e){}
+  /* 同步成 cookie：WebView 里的 <img>/<video> 走自己的网络栈，不会带 Authorization 头。
+     没有 cookie 时每个图片/视频都算「未认证请求」——既会被当成洪水刷爆限速（一直提示
+     访问过于频繁、IP 被锁），视频本身也因 401 加载不出来。 */
+  try{
+    document.cookie = "yunet_auth=" + (token || "") +
+      ";path=/;max-age=" + (token ? "31536000" : "0") + ";SameSite=Lax";
+  }catch(e){}
+  /* 关键：API 请求是走原生桥发的，服务端下发的 Set-Cookie 落在 HttpURLConnection 里，
+     WebView 自己的 cookie jar 根本收不到。所以这里显式把 cookie 灌进 WebView，
+     让 <video>/<img> 发出的请求能带上凭据。 */
+  try{
+    if(window.AndroidBridge && AndroidBridge.setCookie){
+      var base = server();
+      if(base){
+        AndroidBridge.setCookie(base, "yunet_auth=" + (token || "") +
+          "; Path=/; Max-Age=" + (token ? "31536000" : "0"));
+      }
+    }
+  }catch(e){}
 }
 var loginOpen = false;
 function showLogin(msg){
@@ -1014,19 +1123,60 @@ function showLogin(msg){
   setTimeout(function(){ try{ $("lgPass").focus(); }catch(e){} }, 60);
 }
 function hideLogin(){ loginOpen = false; var m = $("loginMask"); if(m) m.classList.add("hide"); }
+var LOGIN_TIMEOUT = 12000;   // 登录校验超时保护（原生桥是同步请求，网络不通时会长时间无响应）
 function doLogin(){
   var u = ($("lgUser").value || "").trim();
   var p = $("lgPass").value || "";
   if(!u){ $("loginErr").textContent = "请输入账号"; return; }
   if(!p){ $("loginErr").textContent = "请输入密码"; return; }
   var tok = btoa(unescape(encodeURIComponent(u + ":" + p)));
+  var settled = false;                       // 超时与真实响应只认先到的那个
   setAuth(tok);                              // 先让两端都带上新凭据再做校验
-  $("loginErr").textContent = "验证中…";
+  $("loginErr").textContent = "登录中，请稍候…";
+  $("loginBtn").disabled = true;
+  var timer = setTimeout(function(){
+    if(settled) return; settled = true;
+    $("loginBtn").disabled = false; setAuth("");
+    $("loginErr").textContent = "登录超时：" + (LOGIN_TIMEOUT / 1000) +
+      " 秒无响应 —— 检查外网隧道 / 电脑端控制台是否在线";
+  }, LOGIN_TIMEOUT);
   jfetch(server() + "/system_stats").then(function(r){
-    if(r.status === 200){ hideLogin(); AndroidBridge.toast("登录成功"); testConn(); }
-    else if(r.status === 401){ setAuth(""); $("loginErr").textContent = "账号或密码不对，再试一次"; }
-    else { $("loginErr").textContent = "连接失败(HTTP " + r.status + ")，检查地址"; }
-  }).catch(function(e){ setAuth(""); $("loginErr").textContent = "网络错误：" + e; });
+    if(settled) return; settled = true; clearTimeout(timer);
+    $("loginBtn").disabled = false;
+    if(r.status === 200){
+      hideLogin();
+      srvHalt = false;                       // 登录成功，恢复状态轮询
+      try{ if(window.AndroidBridge && AndroidBridge.toast) AndroidBridge.toast("登录成功"); }catch(e){}
+      testConn();
+      return;
+    }
+    if(r.status === 401){ setAuth(""); $("loginErr").textContent = "登录失败：账号或密码不对"; return; }
+    if(r.status === 403){
+      setAuth("");
+      // 尝试从服务端返回文本里读出剩余封禁时间
+      return r.text().then(function(txt){
+        var m = txt.match(/(\d+)\s*小时\s*(\d+)\s*分钟/);
+        if(/1010|Attention Required|cloudflare/i.test(txt)){
+          // Cloudflare 浏览器完整性检查：不是账号问题，是客户端请求头不像浏览器
+          $("loginErr").textContent = "被 Cloudflare 拦了(error 1010)：请把 App 升级到 V21+（旧版请求不带浏览器标识）";
+        }
+        else if(m){ $("loginErr").textContent = "登录被锁：" + m[1] + "小时" + m[2] + "分后再试"; }
+        else { $("loginErr").textContent = "登录被锁：当前 IP/账号暂时被封禁，请稍后再试"; }
+      }).catch(function(){ $("loginErr").textContent = "登录被锁：当前 IP/账号暂时被封禁，请稍后再试"; });
+    }
+    if(r.status === 530 || r.status === 502 || r.status === 503){
+      setAuth("");
+      $("loginErr").textContent = "外网服务未就绪(HTTP " + r.status + ")：电脑端隧道/控制台未在线";
+      return;
+    }
+    setAuth("");
+    $("loginErr").textContent = "连接失败(HTTP " + r.status + ")，检查地址或网络";
+  }).catch(function(e){
+    if(settled) return; settled = true; clearTimeout(timer);
+    $("loginBtn").disabled = false;
+    setAuth("");
+    $("loginErr").textContent = "网络错误：" + e;
+  });
 }
 function probeAuth(){
   jfetch(server() + "/system_stats").then(function(r){
@@ -1041,10 +1191,14 @@ function testConn(){
   $("connInfo").textContent = "连接中…";
   jfetch(s + "/system_stats").then(function(r){
     if(r.status === 401){ showLogin("外网访问需要登录 · 本机 / 局域网免登录"); return; }
+    if(r.status === 530 || r.status === 502 || r.status === 503){
+      throw new Error("HTTP " + r.status + " 外网服务未就绪（电脑端隧道/控制台未在线）");
+    }
     if(r.status !== 200){ throw new Error("HTTP " + r.status); }
     return r.json();
   }).then(function(j){
     if(!j) return;
+    srvHalt = false;                         // 连接正常，确保轮询是开着的
     var gpu = (j.devices && j.devices[0]) ? j.devices[0].name : "?";
     $("connInfo").innerHTML = '<span class="ok">✓ 连接成功</span> · ' + gpu;
   }).catch(function(e){
@@ -1053,7 +1207,7 @@ function testConn(){
 }
 
 /* ---------- 标题自定义 (logo 图片 + 文字) ---------- */
-var APP_VER = "V13";   // 每次改版自动 +1（由 tools/bump_ver.py 维护，别手改）
+var APP_VER = "V27";   // 每次改版自动 +1（由 tools/bump_ver.py 维护，别手改）
 function applyBranding(){
   var lt = localStorage.getItem("cfg_title");
   $("logoTxt").textContent = lt || "YUNET SAND-AI";
@@ -1418,8 +1572,14 @@ function showResult(t, vids, savedPath){
   if(!vids.length && !savedPath) box.innerHTML = '<div class="dim">完成但没找到输出文件</div>';
 }
 function viewUrl(v){
-  return server() + "/view?filename=" + encodeURIComponent(v.filename) +
+  var u = server() + "/view?filename=" + encodeURIComponent(v.filename) +
     "&subfolder=" + encodeURIComponent(v.subfolder || "") + "&type=" + (v.type || "output");
+  /* WebView 发出的 <video>/<img> 请求带不了 Authorization 头，cookie 也可能因跨域策略
+     不生效（实测就是 401），所以在 URL 上带凭据兜底 —— 服务端 check() 认 yunet_token。
+     不带的话：历史里的视频一律加载不出来，且每个请求都算「未认证访问」把限速刷爆。 */
+  var tk = getAuthToken();
+  if(tk) u += "&yunet_token=" + encodeURIComponent(tk);
+  return u;
 }
 function saveTask(t){ localStorage.setItem("task_" + t.id, JSON.stringify(t)); }
 
@@ -1515,8 +1675,7 @@ function renderHisInner(){
       vd.controls = true; vd.preload = "metadata";
       vd.style.cssText = "max-height:110px;width:auto";
       vd.setAttribute("data-poster", t.filename || "");
-      vd.src = server() + "/view?filename=" + encodeURIComponent(t.filename || "") +
-        "&subfolder=" + encodeURIComponent(t.subfolder || "") + "&type=output";
+      vd.src = viewUrl(t);
       /* 不再预先隐藏: 抽帧成功后 onPoster 里再收起; 失败时至少能看到视频首帧 */
       if(!isAud && pd) vd.style.display = "none";
       d.appendChild(vd);
@@ -1644,7 +1803,7 @@ taskDone = function(t, h, savedPath){
     <p id="loginHint">外网访问需要登录 · 本机 / 局域网免登录</p>
     <label>账号</label><input id="lgUser" type="text" placeholder="admin" autocomplete="username">
     <label>密码</label><input id="lgPass" type="password" placeholder="" autocomplete="current-password">
-    <button class="btn" onclick="doLogin()">登 录</button>
+    <button id="loginBtn" class="btn" onclick="doLogin()">登 录</button>
     <div id="loginErr"></div>
     <button class="btn2" onclick="hideLogin()">稍后再说</button>
   </div>

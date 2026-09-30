@@ -45,18 +45,30 @@ def push_repo(user, repo):
     subprocess.run(["git", "-c", "credential.helper=", "push", "-u", "origin", "main"],
                    cwd=ROOT, check=True, capture_output=True)
     print("pushed ->", user + "/" + repo)
+    # 回退 2s 保险: 之后 wait_run 只认这个时刻之后创建的运行
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 2))
 
-def wait_run(user, repo, timeout=900):
+def wait_run(user, repo, since=None, timeout=900):
+    """等待 Actions 运行完成.
+
+    since: ISO8601 时间戳(本次 push 的时间). 传了就只认这个时刻之后创建的运行,
+           否则会误抓到上一次已经 success 的旧运行 -> 下载到旧 IPA.
+    """
     print("等待 Actions 运行 ...")
     t0 = time.time()
+    seen = {}
     while time.time() - t0 < timeout:
-        st, j = req("GET", "%s/repos/%s/%s/actions/runs?per_page=3" % (API, user, repo))
+        st, j = req("GET", "%s/repos/%s/%s/actions/runs?per_page=5" % (API, user, repo))
         for r in (j.get("workflow_runs") or []):
+            if since and r.get("created_at", "") < since:
+                continue                      # 本次 push 之前的旧运行, 跳过
+            seen[r["id"]] = r
             if r["status"] == "completed":
                 if r["conclusion"] == "success":
                     return r
                 print("运行失败:", r["html_url"])
                 sys.exit("云编译失败, 把日志贴回来修")
+        print("  ...运行中 (%d 个候选)" % len(seen))
         time.sleep(10)
     sys.exit("超时")
 
@@ -82,6 +94,33 @@ def fetch_artifact(user, repo, run_id, out):
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *a, **kw): return None
 
+
+def verify_ipa(zippath):
+    """解压 artifact zip, 校验里面的 .ipa 是真 arm64 Mach-O 且带 Info.plist."""
+    import zipfile
+    outdir = os.path.join(ROOT, "ipa_out")
+    os.makedirs(outdir, exist_ok=True)
+    with zipfile.ZipFile(zippath) as z:
+        z.extractall(outdir)
+    ipas = [f for f in os.listdir(outdir) if f.lower().endswith(".ipa")]
+    if not ipas: sys.exit("zip 里没有 .ipa")
+    ipa = os.path.join(outdir, ipas[0])
+    with zipfile.ZipFile(ipa) as z:
+        names = z.namelist()
+        exe = [n for n in names if n.endswith("/MiniMaxStudio") and ".app/" in n]
+        plist = "Payload/MiniMaxStudio.app/Info.plist"
+        if not exe or plist not in names:
+            sys.exit("ipa 结构异常: %s" % names[:10])
+        magic = z.read(exe[0])[:4]
+        if magic != b"\xcf\xfa\xed\xfe":
+            sys.exit("可执行文件不是 arm64 Mach-O, magic=%s" % magic.hex())
+        p = z.read(plist).decode("utf-8", "replace")
+    ver = re.search(r"CFBundleShortVersionString</key>\s*<string>([^<]+)", p)
+    minos = re.search(r"MinimumOSVersion</key>\s*<string>([^<]+)", p)
+    print("IPA 校验通过: %s | 版本 %s | 最低 iOS %s | arm64 Mach-O OK"
+          % (os.path.basename(ipa), ver.group(1) if ver else "?", minos.group(1) if minos else "?"))
+    return ipa
+
 def main():
     repo = sys.argv[1] if len(sys.argv) > 1 else "minimax-studio-ios"
     user = gh_user() or sys.exit("token 无效")
@@ -89,10 +128,13 @@ def main():
     st, _ = req("POST", API + "/user/repos", {"name": repo, "private": False, "auto_init": False})
     if st not in (201, 422):
         sys.exit("建仓库失败 %s: %s" % (st, _))
-    push_repo(user, repo)
-    run = wait_run(user, repo)
-    fetch_artifact(user, repo, run["id"], os.path.join(ROOT, "MiniMaxStudio-ipa.zip"))
-    print("\n完成: 解压 zip 得 .ipa, 传到 iPhone -> 文件App长按 -> 分享 -> TrollStore -> Install")
+    since = push_repo(user, repo)
+    run = wait_run(user, repo, since=since)
+    zp = os.path.join(ROOT, "MiniMaxStudio-ipa.zip")
+    fetch_artifact(user, repo, run["id"], zp)
+    ipa = verify_ipa(zp)
+    print("\n完成: %s" % ipa)
+    print("传到 iPhone -> 文件App长按 -> 分享 -> TrollStore -> Install")
 
 if __name__ == "__main__":
     main()
